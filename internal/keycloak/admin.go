@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -421,6 +422,131 @@ func containsString(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// ListIdentityProviders returns all identity providers configured in realm.
+func (a *Admin) ListIdentityProviders(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	providers, err := a.client.GetIdentityProviders(ctx, tok, realm)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list identity providers in realm %q", realm), err)
+	}
+	return providers, nil
+}
+
+// GetIdentityProvider returns the provider with the given alias.
+func (a *Admin) GetIdentityProvider(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := a.client.GetIdentityProvider(ctx, tok, realm, alias)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get identity provider %q in realm %q", alias, realm), err)
+	}
+	return provider, nil
+}
+
+// CreateIdentityProvider creates an identity provider and returns the stored
+// representation.
+func (a *Admin) CreateIdentityProvider(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+	if provider.Alias == nil || *provider.Alias == "" {
+		return nil, fmt.Errorf("create identity provider in realm %q: empty alias", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.client.CreateIdentityProvider(ctx, tok, realm, provider); err != nil {
+		return nil, wrapErr(fmt.Sprintf("create identity provider %q in realm %q", *provider.Alias, realm), err)
+	}
+	return a.GetIdentityProvider(ctx, realm, *provider.Alias)
+}
+
+// UpdateIdentityProvider partially updates the provider with alias. Existing
+// fields and config keys not present in provider are preserved.
+func (a *Admin) UpdateIdentityProvider(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+	if alias == "" {
+		return nil, fmt.Errorf("update identity provider in realm %q: empty alias", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := a.client.GetIdentityProvider(ctx, tok, realm, alias)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get identity provider %q before update in realm %q", alias, realm), err)
+	}
+	merged := *existing
+	if provider.DisplayName != nil {
+		merged.DisplayName = provider.DisplayName
+	}
+	if provider.Enabled != nil {
+		merged.Enabled = provider.Enabled
+	}
+	if provider.FirstBrokerLoginFlowAlias != nil {
+		merged.FirstBrokerLoginFlowAlias = provider.FirstBrokerLoginFlowAlias
+	}
+	if provider.PostBrokerLoginFlowAlias != nil {
+		merged.PostBrokerLoginFlowAlias = provider.PostBrokerLoginFlowAlias
+	}
+	if provider.LinkOnly != nil {
+		merged.LinkOnly = provider.LinkOnly
+	}
+	if provider.StoreToken != nil {
+		merged.StoreToken = provider.StoreToken
+	}
+	if provider.TrustEmail != nil {
+		merged.TrustEmail = provider.TrustEmail
+	}
+	if provider.HideOnLogin != nil {
+		merged.HideOnLogin = provider.HideOnLogin
+	}
+	if provider.AddReadTokenRoleOnCreate != nil {
+		merged.AddReadTokenRoleOnCreate = provider.AddReadTokenRoleOnCreate
+	}
+	if provider.Config != nil {
+		merged.Config = cloneStringMap(existing.Config)
+		for key, value := range provider.Config {
+			merged.Config[key] = value
+		}
+	}
+	if err := a.client.UpdateIdentityProvider(ctx, tok, realm, alias, merged); err != nil {
+		return nil, wrapErr(fmt.Sprintf("update identity provider %q in realm %q", alias, realm), err)
+	}
+	return a.GetIdentityProvider(ctx, realm, alias)
+}
+
+// DeleteIdentityProvider deletes the provider with alias.
+func (a *Admin) DeleteIdentityProvider(ctx context.Context, realm, alias string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteIdentityProvider(ctx, tok, realm, alias); err != nil {
+		return wrapErr(fmt.Sprintf("delete identity provider %q in realm %q", alias, realm), err)
+	}
+	return nil
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	clone := make(map[string]string, len(source))
+	for key, value := range source {
+		normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+		if strings.Contains(normalized, "secret") || strings.Contains(normalized, "password") {
+			// Keycloak returns secrets as ********** and expects that masked
+			// value to preserve the existing secret during an update.
+			if value != "" {
+				clone[key] = value
+			}
+			continue
+		}
+		clone[key] = value
+	}
+	return clone
 }
 
 // Users.

@@ -39,6 +39,11 @@ type AdminAPI interface {
 	RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error
 	ListEvents(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
 	ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
+	ListIdentityProviders(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error)
+	GetIdentityProvider(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error)
+	CreateIdentityProvider(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	UpdateIdentityProvider(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	DeleteIdentityProvider(ctx context.Context, realm, alias string) error
 
 	ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error)
 	GetUser(ctx context.Context, realm, userID string) (*gocloak.User, error)
@@ -74,6 +79,7 @@ func New(admin AdminAPI) *mcp.Server {
 	addClientTools(s, admin)
 	addClientScopeTools(s, admin)
 	addEventTools(s, admin)
+	addIdentityProviderTools(s, admin)
 	addUserTools(s, admin)
 	addGroupTools(s, admin)
 	addRealmRoleTools(s, admin)

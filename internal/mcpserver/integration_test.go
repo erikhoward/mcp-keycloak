@@ -132,6 +132,56 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("OIDC identity provider lifecycle", func(t *testing.T) {
+		res := callTool(t, cs, "identity_provider_create", map[string]any{
+			"realm":            realm,
+			"alias":            "corporate",
+			"displayName":      "Corporate SSO",
+			"issuer":           "https://idp.example.com",
+			"authorizationUrl": "https://idp.example.com/authorize",
+			"tokenUrl":         "https://idp.example.com/token",
+			"userInfoUrl":      "https://idp.example.com/userinfo",
+			"clientId":         "keycloak-client",
+			"clientSecret":     "super-secret",
+		})
+		if text := resultText(t, res); strings.Contains(text, "super-secret") || !strings.Contains(text, redactedSecret) {
+			t.Fatalf("identity_provider_create leaked or failed to redact client secret: %s", text)
+		}
+
+		res = callTool(t, cs, "identity_provider_list", map[string]any{"realm": realm})
+		providers := decodeResult[[]*gocloak.IdentityProviderRepresentation](t, res)
+		found := false
+		for _, provider := range providers {
+			if deref(provider.Alias) == "corporate" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("identity_provider_list does not include corporate")
+		}
+
+		res = callTool(t, cs, "identity_provider_get", map[string]any{"realm": realm, "alias": "corporate"})
+		if text := resultText(t, res); strings.Contains(text, "super-secret") {
+			t.Fatal("identity_provider_get returned the client secret")
+		}
+
+		res = callTool(t, cs, "identity_provider_update", map[string]any{
+			"realm": realm, "alias": "corporate", "displayName": "Corporate SSO v2", "defaultScope": "openid email",
+		})
+		if text := resultText(t, res); strings.Contains(text, "super-secret") || !strings.Contains(text, "Corporate SSO v2") {
+			t.Fatalf("identity_provider_update returned unexpected output: %s", text)
+		}
+		stored, err := testAdmin.GetIdentityProvider(t.Context(), realm, "corporate")
+		if err != nil {
+			t.Fatalf("get stored identity provider: %v", err)
+		}
+		if deref(stored.DisplayName) != "Corporate SSO v2" || stored.Config["clientSecret"] == "" || stored.Config["clientSecret"] == "super-secret" || stored.Config["defaultScope"] != "openid email" {
+			t.Errorf("stored provider did not preserve/update expected fields: display=%q config=%v", deref(stored.DisplayName), stored.Config)
+		}
+
+		callTool(t, cs, "identity_provider_delete", map[string]any{"realm": realm, "alias": "corporate"})
+	})
+
 	t.Run("event audit", func(t *testing.T) {
 		callTool(t, cs, "client_update", map[string]any{
 			"realm": realm, "clientId": "web-app", "directAccessGrantsEnabled": true,

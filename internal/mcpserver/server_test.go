@@ -33,6 +33,11 @@ type fakeAdmin struct {
 	removeOptionalScope      func(ctx context.Context, realm, clientID, scopeID string) error
 	listEvents               func(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
 	listAdminEvents          func(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
+	listIdentityProviders    func(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error)
+	getIdentityProvider      func(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error)
+	createIdentityProvider   func(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	updateIdentityProvider   func(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	deleteIdentityProvider   func(ctx context.Context, realm, alias string) error
 	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
 	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
 	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
@@ -99,6 +104,26 @@ func (f fakeAdmin) ListEvents(ctx context.Context, realm string, params gocloak.
 
 func (f fakeAdmin) ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
 	return f.listAdminEvents(ctx, realm, params)
+}
+
+func (f fakeAdmin) ListIdentityProviders(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error) {
+	return f.listIdentityProviders(ctx, realm)
+}
+
+func (f fakeAdmin) GetIdentityProvider(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error) {
+	return f.getIdentityProvider(ctx, realm, alias)
+}
+
+func (f fakeAdmin) CreateIdentityProvider(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+	return f.createIdentityProvider(ctx, realm, provider)
+}
+
+func (f fakeAdmin) UpdateIdentityProvider(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+	return f.updateIdentityProvider(ctx, realm, alias, provider)
+}
+
+func (f fakeAdmin) DeleteIdentityProvider(ctx context.Context, realm, alias string) error {
+	return f.deleteIdentityProvider(ctx, realm, alias)
 }
 
 func (f fakeAdmin) CreateUser(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error) {
@@ -289,6 +314,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"client_scope_get", "client_scope_delete",
 		"client_scope_assign", "client_scope_unassign",
 		"event_admin_list", "event_login_list",
+		"identity_provider_get", "identity_provider_update", "identity_provider_delete",
 		"user_get", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
@@ -299,6 +325,79 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		if err == nil && !res.IsError {
 			t.Errorf("%s: expected an error when required arguments are missing", name)
 		}
+	}
+}
+
+func TestIdentityProviderCreateRedactsSecret(t *testing.T) {
+	var captured gocloak.IdentityProviderRepresentation
+	admin := &fakeAdmin{createIdentityProvider: func(_ context.Context, _ string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+		captured = provider
+		return &gocloak.IdentityProviderRepresentation{
+			Alias: provider.Alias, ProviderID: provider.ProviderID, DisplayName: provider.DisplayName,
+			Config: map[string]string{"clientId": "client-1", "clientSecret": "super-secret", "issuer": "https://idp.example.com"},
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "identity_provider_create", map[string]any{
+		"realm": "acme", "alias": "corporate", "displayName": "Corporate SSO",
+		"issuer": "https://idp.example.com", "clientId": "client-1", "clientSecret": "super-secret",
+	})
+	if deref(captured.ProviderID) != "oidc" {
+		t.Errorf("providerID = %q, want oidc", deref(captured.ProviderID))
+	}
+	if captured.Config["clientSecret"] != "super-secret" {
+		t.Errorf("captured client secret = %q, want original input", captured.Config["clientSecret"])
+	}
+	text := resultText(t, res)
+	if strings.Contains(text, "super-secret") || !strings.Contains(text, redactedSecret) {
+		t.Errorf("result leaked or failed to redact client secret: %s", text)
+	}
+}
+
+func TestIdentityProviderUpdateIsPartialAndRedacted(t *testing.T) {
+	var captured gocloak.IdentityProviderRepresentation
+	admin := &fakeAdmin{updateIdentityProvider: func(_ context.Context, _, _ string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+		captured = provider
+		return &gocloak.IdentityProviderRepresentation{
+			Alias: gocloak.StringP("corporate"), DisplayName: provider.DisplayName,
+			Config: map[string]string{"clientSecret": "super-secret", "defaultScope": "openid email"},
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "identity_provider_update", map[string]any{
+		"realm": "acme", "alias": "corporate", "displayName": "Corporate v2", "defaultScope": "openid email",
+	})
+	if deref(captured.DisplayName) != "Corporate v2" || captured.Config["defaultScope"] != "openid email" {
+		t.Errorf("captured update = display=%q config=%v", deref(captured.DisplayName), captured.Config)
+	}
+	if _, ok := captured.Config["clientSecret"]; ok {
+		t.Error("omitted client secret should not be sent in a partial update")
+	}
+	text := resultText(t, res)
+	if strings.Contains(text, "super-secret") || !strings.Contains(text, redactedSecret) {
+		t.Errorf("result leaked or failed to redact client secret: %s", text)
+	}
+}
+
+func TestIdentityProviderRejectsInsecureRemoteURL(t *testing.T) {
+	called := false
+	admin := &fakeAdmin{createIdentityProvider: func(context.Context, string, gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error) {
+		called = true
+		return nil, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "identity_provider_create",
+		Arguments: map[string]any{"realm": "acme", "alias": "corporate", "issuer": "http://idp.example.com"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool protocol error: %v", err)
+	}
+	if !res.IsError || called {
+		t.Errorf("expected URL validation tool error before admin call; result=%v called=%v", res.IsError, called)
 	}
 }
 
