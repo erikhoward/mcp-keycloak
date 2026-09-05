@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -17,12 +18,16 @@ import (
 type fakeAdmin struct {
 	AdminAPI
 
-	listRealms      func(ctx context.Context) ([]*gocloak.RealmRepresentation, error)
-	createRealm     func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
-	deleteRealm     func(ctx context.Context, realm string) error
-	listClients     func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
-	createUser      func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
-	setUserPassword func(ctx context.Context, realm, userID, password string, temporary bool) error
+	listRealms               func(ctx context.Context) ([]*gocloak.RealmRepresentation, error)
+	createRealm              func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
+	deleteRealm              func(ctx context.Context, realm string) error
+	listClients              func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
+	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
+	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
+	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
+	removeRealmRolesFromUser func(ctx context.Context, realm, userID string, roleNames []string) error
+	addUserToGroup           func(ctx context.Context, realm, userID, groupID string) error
+	removeUserFromGroup      func(ctx context.Context, realm, userID, groupID string) error
 }
 
 func (f fakeAdmin) ListRealms(ctx context.Context) ([]*gocloak.RealmRepresentation, error) {
@@ -47,6 +52,22 @@ func (f fakeAdmin) CreateUser(ctx context.Context, realm string, rep gocloak.Use
 
 func (f fakeAdmin) SetUserPassword(ctx context.Context, realm, userID, password string, temporary bool) error {
 	return f.setUserPassword(ctx, realm, userID, password, temporary)
+}
+
+func (f fakeAdmin) AddRealmRolesToUser(ctx context.Context, realm, userID string, roleNames []string) error {
+	return f.addRealmRolesToUser(ctx, realm, userID, roleNames)
+}
+
+func (f fakeAdmin) RemoveRealmRolesFromUser(ctx context.Context, realm, userID string, roleNames []string) error {
+	return f.removeRealmRolesFromUser(ctx, realm, userID, roleNames)
+}
+
+func (f fakeAdmin) AddUserToGroup(ctx context.Context, realm, userID, groupID string) error {
+	return f.addUserToGroup(ctx, realm, userID, groupID)
+}
+
+func (f fakeAdmin) RemoveUserFromGroup(ctx context.Context, realm, userID, groupID string) error {
+	return f.removeUserFromGroup(ctx, realm, userID, groupID)
 }
 
 // newTestClient connects an MCP client session to a server built from admin
@@ -211,6 +232,8 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"realm_get", "realm_delete",
 		"client_get", "client_delete",
 		"user_get", "user_set_password", "user_delete",
+		"user_add_realm_role", "user_remove_realm_role",
+		"user_add_to_group", "user_remove_from_group",
 		"group_delete",
 		"realm_role_delete",
 	} {
@@ -304,5 +327,102 @@ func TestUserSetPasswordDefaultsToPermanent(t *testing.T) {
 	})
 	if gotTemporary {
 		t.Error("password should be permanent (temporary=false) by default")
+	}
+}
+
+func TestUserRealmRoleAssignment(t *testing.T) {
+	var gotRealm, gotUserID string
+	var gotNames []string
+	admin := &fakeAdmin{addRealmRolesToUser: func(_ context.Context, realm, userID string, roleNames []string) error {
+		gotRealm, gotUserID, gotNames = realm, userID, roleNames
+		return nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_add_realm_role", map[string]any{
+		"realm": "acme", "userId": "u-1", "roles": []string{"admin", "auditor"},
+	})
+	if gotRealm != "acme" || gotUserID != "u-1" {
+		t.Errorf("called with (%q, %q), want (acme, u-1)", gotRealm, gotUserID)
+	}
+	if len(gotNames) != 2 || gotNames[0] != "admin" || gotNames[1] != "auditor" {
+		t.Errorf("role names = %v, want [admin auditor]", gotNames)
+	}
+	out := decodeResult[map[string]any](t, res)
+	if fmt.Sprint(out["rolesAdded"]) != "[admin auditor]" {
+		t.Errorf("rolesAdded = %v, want [admin auditor]", out["rolesAdded"])
+	}
+}
+
+func TestUserRealmRoleRemoval(t *testing.T) {
+	var gotNames []string
+	admin := &fakeAdmin{removeRealmRolesFromUser: func(_ context.Context, _, _ string, roleNames []string) error {
+		gotNames = roleNames
+		return nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_remove_realm_role", map[string]any{
+		"realm": "acme", "userId": "u-1", "roles": []string{"auditor"},
+	})
+	if len(gotNames) != 1 || gotNames[0] != "auditor" {
+		t.Errorf("role names = %v, want [auditor]", gotNames)
+	}
+	out := decodeResult[map[string]any](t, res)
+	if fmt.Sprint(out["rolesRemoved"]) != "[auditor]" {
+		t.Errorf("rolesRemoved = %v, want [auditor]", out["rolesRemoved"])
+	}
+}
+
+func TestUserRealmRoleEmptyListRejected(t *testing.T) {
+	cs := newTestClient(t, &fakeAdmin{})
+	for _, name := range []string{"user_add_realm_role", "user_remove_realm_role"} {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+			Name:      name,
+			Arguments: map[string]any{"realm": "acme", "userId": "u-1", "roles": []string{}},
+		})
+		if err != nil {
+			t.Fatalf("%s: protocol error: %v", name, err)
+		}
+		if !res.IsError {
+			t.Errorf("%s: expected tool error for empty roles list", name)
+		}
+	}
+}
+
+func TestUserGroupMembership(t *testing.T) {
+	var added, removed [2]string
+	admin := &fakeAdmin{
+		addUserToGroup: func(_ context.Context, realm, userID, groupID string) error {
+			added = [2]string{realm + ":" + userID, groupID}
+			return nil
+		},
+		removeUserFromGroup: func(_ context.Context, realm, userID, groupID string) error {
+			removed = [2]string{realm + ":" + userID, groupID}
+			return nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_add_to_group", map[string]any{
+		"realm": "acme", "userId": "u-1", "groupId": "g-1",
+	})
+	if added != [2]string{"acme:u-1", "g-1"} {
+		t.Errorf("addUserToGroup args = %v, want acme:u-1 / g-1", added)
+	}
+	out := decodeResult[map[string]any](t, res)
+	if out["added"] != true {
+		t.Errorf("add output = %v, want added=true", out)
+	}
+
+	res = callTool(t, cs, "user_remove_from_group", map[string]any{
+		"realm": "acme", "userId": "u-1", "groupId": "g-1",
+	})
+	if removed != [2]string{"acme:u-1", "g-1"} {
+		t.Errorf("removeUserFromGroup args = %v, want acme:u-1 / g-1", removed)
+	}
+	out = decodeResult[map[string]any](t, res)
+	if out["removed"] != true {
+		t.Errorf("remove output = %v, want removed=true", out)
 	}
 }

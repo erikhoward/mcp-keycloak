@@ -21,7 +21,10 @@ import (
 // deliberately when testing against newer Keycloak releases.
 const keycloakImage = "quay.io/keycloak/keycloak:26.7.3"
 
-var testAdmin *keycloak.Admin
+var (
+	testAdmin   *keycloak.Admin
+	testBaseURL string
+)
 
 // TestMain starts a disposable Keycloak container for the whole integration
 // run. It requires a working Docker daemon; without the integration build
@@ -42,6 +45,7 @@ func TestMain(m *testing.M) {
 		_ = kc.Terminate(ctx)
 		os.Exit(1)
 	}
+	testBaseURL = baseURL
 	testAdmin = keycloak.NewAdmin(baseURL, "admin", "admin", "master")
 
 	code := m.Run()
@@ -117,6 +121,56 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 		if deref(user.FirstName) != "Alicia" {
 			t.Errorf("firstName = %q, want %q", deref(user.FirstName), "Alicia")
+		}
+	})
+
+	t.Run("user role and group assignment", func(t *testing.T) {
+		callTool(t, cs, "user_add_realm_role", map[string]any{
+			"realm": realm, "userId": userID, "roles": []string{"auditor"},
+		})
+		callTool(t, cs, "user_add_to_group", map[string]any{
+			"realm": realm, "userId": userID, "groupId": groupID,
+		})
+
+		// Verify effective grants straight through Keycloak, bypassing
+		// the tool layer.
+		gc := gocloak.NewClient(testBaseURL)
+		tok := verifyToken(t)
+		roles, err := gc.GetRealmRolesByUserID(t.Context(), tok, realm, userID)
+		if err != nil {
+			t.Fatalf("verifying user roles: %v", err)
+		}
+		if !hasRoleName(roles, "auditor") {
+			t.Error("user does not have the auditor role after user_add_realm_role")
+		}
+		groups, err := gc.GetUserGroups(t.Context(), tok, realm, userID, gocloak.GetGroupsParams{})
+		if err != nil {
+			t.Fatalf("verifying user groups: %v", err)
+		}
+		if !hasGroupID(groups, groupID) {
+			t.Error("user is not a member of the engineers group after user_add_to_group")
+		}
+
+		callTool(t, cs, "user_remove_realm_role", map[string]any{
+			"realm": realm, "userId": userID, "roles": []string{"auditor"},
+		})
+		callTool(t, cs, "user_remove_from_group", map[string]any{
+			"realm": realm, "userId": userID, "groupId": groupID,
+		})
+
+		roles, err = gc.GetRealmRolesByUserID(t.Context(), tok, realm, userID)
+		if err != nil {
+			t.Fatalf("re-verifying user roles: %v", err)
+		}
+		if hasRoleName(roles, "auditor") {
+			t.Error("user still has the auditor role after user_remove_realm_role")
+		}
+		groups, err = gc.GetUserGroups(t.Context(), tok, realm, userID, gocloak.GetGroupsParams{})
+		if err != nil {
+			t.Fatalf("re-verifying user groups: %v", err)
+		}
+		if hasGroupID(groups, groupID) {
+			t.Error("user is still a member of the engineers group after user_remove_from_group")
 		}
 	})
 
@@ -233,4 +287,34 @@ func createRealmRole(t *testing.T, cs *mcp.ClientSession, realm string) string {
 	})
 	role := decodeResult[gocloak.Role](t, res)
 	return deref(role.Name)
+}
+
+// verifyToken returns a fresh admin token for verifying effects straight
+// through Keycloak, bypassing the tool layer under test.
+func verifyToken(t *testing.T) string {
+	t.Helper()
+	gc := gocloak.NewClient(testBaseURL)
+	jwt, err := gc.LoginAdmin(t.Context(), "admin", "admin", "master")
+	if err != nil {
+		t.Fatalf("verification admin login: %v", err)
+	}
+	return jwt.AccessToken
+}
+
+func hasRoleName(roles []*gocloak.Role, name string) bool {
+	for _, r := range roles {
+		if deref(r.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasGroupID(groups []*gocloak.Group, id string) bool {
+	for _, g := range groups {
+		if deref(g.ID) == id {
+			return true
+		}
+	}
+	return false
 }

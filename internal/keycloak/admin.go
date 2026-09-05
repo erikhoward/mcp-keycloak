@@ -321,6 +321,87 @@ func (a *Admin) DeleteUser(ctx context.Context, realm, userID string) error {
 	return nil
 }
 
+// AddRealmRolesToUser assigns the named realm roles to the user with the
+// internal ID userID. Names are resolved to roles first, so an unknown name
+// fails before any mapping is changed.
+func (a *Admin) AddRealmRolesToUser(ctx context.Context, realm, userID string, roleNames []string) error {
+	roles, err := a.resolveRealmRoles(ctx, realm, roleNames)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddRealmRoleToUser(ctx, tok, realm, userID, roles); err != nil {
+		return wrapErr(fmt.Sprintf("add realm roles to user %q in realm %q", userID, realm), err)
+	}
+	return nil
+}
+
+// RemoveRealmRolesFromUser removes the named realm roles from the user with
+// the internal ID userID. Names are resolved to roles first, so an unknown
+// name fails before any mapping is changed.
+func (a *Admin) RemoveRealmRolesFromUser(ctx context.Context, realm, userID string, roleNames []string) error {
+	roles, err := a.resolveRealmRoles(ctx, realm, roleNames)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteRealmRoleFromUser(ctx, tok, realm, userID, roles); err != nil {
+		return wrapErr(fmt.Sprintf("remove realm roles from user %q in realm %q", userID, realm), err)
+	}
+	return nil
+}
+
+// resolveRealmRoles looks up full role representations for the given names.
+// Keycloak's role-mapping endpoints match roles by ID, so name-only
+// representations are rejected with 404s.
+func (a *Admin) resolveRealmRoles(ctx context.Context, realm string, roleNames []string) ([]gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles := make([]gocloak.Role, 0, len(roleNames))
+	for _, name := range roleNames {
+		role, err := a.client.GetRealmRole(ctx, tok, realm, name)
+		if err != nil {
+			return nil, wrapErr(fmt.Sprintf("look up realm role %q in realm %q", name, realm), err)
+		}
+		roles = append(roles, *role)
+	}
+	return roles, nil
+}
+
+// AddUserToGroup adds the user with the internal ID userID to the group with
+// the internal ID groupID.
+func (a *Admin) AddUserToGroup(ctx context.Context, realm, userID, groupID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddUserToGroup(ctx, tok, realm, userID, groupID); err != nil {
+		return wrapErr(fmt.Sprintf("add user %q to group %q in realm %q", userID, groupID, realm), err)
+	}
+	return nil
+}
+
+// RemoveUserFromGroup removes the user with the internal ID userID from the
+// group with the internal ID groupID.
+func (a *Admin) RemoveUserFromGroup(ctx context.Context, realm, userID, groupID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteUserFromGroup(ctx, tok, realm, userID, groupID); err != nil {
+		return wrapErr(fmt.Sprintf("remove user %q from group %q in realm %q", userID, groupID, realm), err)
+	}
+	return nil
+}
+
 // Groups.
 
 // ListGroups returns groups in realm matching the optional search substring.

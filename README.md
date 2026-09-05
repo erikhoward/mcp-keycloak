@@ -14,7 +14,7 @@ API. Speaks MCP over stdio. MIT licensed.
 | --- | --- |
 | Realms | `realm_list`, `realm_get`, `realm_create`, `realm_update`, `realm_delete` |
 | Clients | `client_list`, `client_get`, `client_create`, `client_secret_get`, `client_delete` |
-| Users | `user_list`, `user_get`, `user_create`, `user_update`, `user_set_password`, `user_delete` |
+| Users | `user_list`, `user_get`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group` |
 | Groups | `group_list`, `group_create`, `group_delete` |
 | Realm roles | `realm_role_list`, `realm_role_create`, `realm_role_delete` |
 
@@ -22,7 +22,7 @@ Notes for agents calling the tools:
 
 - Realms are addressed by name; clients by their `clientId` (resolved
   internally); users and groups by their internal UUID, which every create
-  and list tool returns.
+  and list tool returns. Role assignment matches realm roles by name.
 - `user_create` accepts an optional initial password, temporary by default so
   the user must change it at first login.
 - Created clients are confidential (with an auto-generated secret, fetchable

@@ -49,6 +49,18 @@ type setUserPasswordInput struct {
 	Temporary *bool  `json:"temporary,omitempty" jsonschema:"when true the user must change the password at next login; default false"`
 }
 
+type userRolesInput struct {
+	Realm  string   `json:"realm" jsonschema:"realm name"`
+	UserID string   `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
+	Roles  []string `json:"roles" jsonschema:"realm role names, e.g. [\"auditor\"]"`
+}
+
+type userGroupInput struct {
+	Realm   string `json:"realm" jsonschema:"realm name"`
+	UserID  string `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
+	GroupID string `json:"groupId" jsonschema:"internal group ID (UUID) as returned by group_list or group_create"`
+}
+
 func addUserTools(s *mcp.Server, admin AdminAPI) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_list",
@@ -155,5 +167,57 @@ func addUserTools(s *mcp.Server, admin AdminAPI) {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "deleted": true}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_add_realm_role",
+		Title:       "Add realm roles to user",
+		Description: "Assign realm roles to a user by internal user ID; roles are matched by name, e.g. [\"auditor\"]. Returns the roles added.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: gocloak.BoolP(false)},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRolesInput) (*mcp.CallToolResult, any, error) {
+		if len(in.Roles) == 0 {
+			return nil, nil, fmt.Errorf("roles must list at least one realm role name")
+		}
+		if err := admin.AddRealmRolesToUser(ctx, in.Realm, in.UserID, in.Roles); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "rolesAdded": in.Roles}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_remove_realm_role",
+		Title:       "Remove realm roles from user",
+		Description: "Remove realm roles from a user by internal user ID; roles are matched by name. Returns the roles removed.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRolesInput) (*mcp.CallToolResult, any, error) {
+		if len(in.Roles) == 0 {
+			return nil, nil, fmt.Errorf("roles must list at least one realm role name")
+		}
+		if err := admin.RemoveRealmRolesFromUser(ctx, in.Realm, in.UserID, in.Roles); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "rolesRemoved": in.Roles}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_add_to_group",
+		Title:       "Add user to group",
+		Description: "Add a user to a group by internal user ID and group ID.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: gocloak.BoolP(false)},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userGroupInput) (*mcp.CallToolResult, any, error) {
+		if err := admin.AddUserToGroup(ctx, in.Realm, in.UserID, in.GroupID); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "groupId": in.GroupID, "added": true}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_remove_from_group",
+		Title:       "Remove user from group",
+		Description: "Remove a user from a group by internal user ID and group ID.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userGroupInput) (*mcp.CallToolResult, any, error) {
+		if err := admin.RemoveUserFromGroup(ctx, in.Realm, in.UserID, in.GroupID); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "groupId": in.GroupID, "removed": true}, nil
 	})
 }
