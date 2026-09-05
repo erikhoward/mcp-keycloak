@@ -49,6 +49,9 @@ Notes for agents calling the tools:
 | `KEYCLOAK_ADMIN_PASSWORD` | yes | Administrator account password |
 | `KEYCLOAK_ADMIN_REALM` | no | Realm holding the admin account (default `master`) |
 
+`KEYCLOAK_URL` must use HTTPS for remote Keycloak servers. HTTP is accepted
+only for localhost or loopback development environments.
+
 Variables can live in the process environment. When the server is started
 from a working directory containing `.env`, it loads that file as a local
 development convenience (see `.env.example`); existing environment variables

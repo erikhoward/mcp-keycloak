@@ -4,6 +4,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -29,7 +31,7 @@ type Config struct {
 // loaded by the main command before Load is called.
 func Load() (Config, error) {
 	cfg := Config{
-		KeycloakURL:   strings.TrimRight(os.Getenv("KEYCLOAK_URL"), "/"),
+		KeycloakURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("KEYCLOAK_URL")), "/"),
 		AdminUsername: os.Getenv("KEYCLOAK_ADMIN_USERNAME"),
 		AdminPassword: os.Getenv("KEYCLOAK_ADMIN_PASSWORD"),
 		AdminRealm:    os.Getenv("KEYCLOAK_ADMIN_REALM"),
@@ -51,5 +53,36 @@ func Load() (Config, error) {
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required environment variables (set them in the environment or a .env file): %s", strings.Join(missing, ", "))
 	}
+	if err := validateKeycloakURL(cfg.KeycloakURL); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func validateKeycloakURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" {
+		return fmt.Errorf("invalid KEYCLOAK_URL: use an absolute HTTPS URL (HTTP is allowed only for localhost development)")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("invalid KEYCLOAK_URL: embedded URL credentials are not allowed")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("invalid KEYCLOAK_URL: query strings and fragments are not allowed")
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	if parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname()) {
+		return nil
+	}
+	return fmt.Errorf("invalid KEYCLOAK_URL: use HTTPS; HTTP is allowed only for localhost or loopback development")
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

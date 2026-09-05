@@ -53,3 +53,38 @@ func TestLoadMissingVariables(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadKeycloakURLValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{name: "remote HTTPS", url: "https://sso.example.com", wantErr: false},
+		{name: "HTTPS with context path", url: "https://sso.example.com/auth", wantErr: false},
+		{name: "localhost HTTP", url: "http://localhost:8080", wantErr: false},
+		{name: "IPv4 loopback HTTP", url: "http://127.0.0.1:8080", wantErr: false},
+		{name: "IPv6 loopback HTTP", url: "http://[::1]:8080", wantErr: false},
+		{name: "remote HTTP", url: "http://sso.example.com", wantErr: true},
+		{name: "unsupported scheme", url: "ftp://sso.example.com", wantErr: true},
+		{name: "embedded credentials", url: "https://admin:secret@sso.example.com", wantErr: true},
+		{name: "query string", url: "https://sso.example.com?realm=master", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("KEYCLOAK_URL", test.url)
+			t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
+			t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+			t.Setenv("KEYCLOAK_ADMIN_REALM", "master")
+
+			_, err := Load()
+			if test.wantErr && err == nil {
+				t.Fatalf("Load(%q): expected an error", test.url)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("Load(%q): unexpected error: %v", test.url, err)
+			}
+		})
+	}
+}
