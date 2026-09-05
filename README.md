@@ -8,6 +8,9 @@ Built with the official [Go MCP SDK](https://github.com/modelcontextprotocol/go-
 over [gocloak](https://github.com/Nerzal/gocloak) and the Keycloak Admin REST
 API. Speaks MCP over stdio. MIT licensed.
 
+Before connecting an account, review [Security](#security) for credential,
+HTTPS, and transcript handling requirements.
+
 ## Tools
 
 | Group | Tools |
@@ -33,15 +36,58 @@ Notes for agents calling the tools:
 - `client_secret_get` omits the secret by default. Set `includeSecret: true`
   only when explicitly needed; the value is returned in structured output and
   may be retained by the MCP client's transcript or model context.
-- List tools return at most 100 results unless a smaller `max` is given.
+- List tools default to 100 results; use a smaller `max` to limit disclosure.
 - `event_admin_list` requires Admin Events enabled in the realm; `event_login_list`
   requires user events enabled. Event type and admin operation/resource filters
   are supported.
+- See [event filters, date formats, and troubleshooting](docs/events.md) for
+  audit queries.
 - Identity-provider tools configure realm login brokering, not MCP
   authentication. OIDC provider client secrets are redacted from every tool
   response; provider changes can affect realm-wide login.
 - Failures surface as MCP tool errors with the Keycloak API status and
   message, so the model can see and correct them.
+
+## Security
+
+Use HTTPS for remote Keycloak connections. HTTP is accepted only for
+`localhost` (case-insensitive) or literal loopback IPs, such as
+`http://127.0.0.1:8080` and `http://[::1]:8080`. Private LAN addresses,
+container hostnames, and DNS aliases that resolve to loopback do not qualify.
+URLs must not contain embedded credentials, query strings, or fragments.
+For a private CA, set `KEYCLOAK_CA_CERT_FILE` to a PEM bundle; TLS certificate
+verification remains enabled.
+
+- **Administrator credentials:** use a dedicated, least-privileged account or
+  service account. Configure exactly one authentication mode. Keep passwords
+  and `KEYCLOAK_ADMIN_CLIENT_SECRET` in the process environment or a protected,
+  gitignored `.env`, never in prompts, commits, or shared client configuration.
+  The server acts with the configured account's Keycloak permissions.
+- **Client secrets:** `client_secret_get` omits the value unless
+  `includeSecret: true`. Opting in places the secret in structured tool output,
+  which the MCP client and model may retain. Do not request it for routine
+  inspection or copy it into tickets or chat.
+- **OIDC provider secrets:** provider tools redact sensitive configuration keys
+  in responses, including `clientSecret`. Secrets supplied to create/update
+  tools still enter tool arguments and may be retained in transcripts.
+- **Event data:** audit representations and login details can contain user
+  identifiers, IP addresses, email addresses, resource paths, and configuration
+  data. Sensitive keys containing `secret`, `password`, `token`, or `credential`
+  are redacted case-insensitively. Admin JSON representations are sanitized
+  recursively; invalid JSON is replaced with `[REDACTED]`. This is key-based
+  redaction, not comprehensive anonymization: personal data, free text, URLs,
+  and values under other keys may remain sensitive.
+- **Client/model transcripts:** both tool inputs and outputs may be logged,
+  shared, or retained by the client or model provider. Check those retention
+  settings, restrict access, and review/redact diagnostics before sharing.
+  Rotate any credential accidentally exposed.
+
+Set `KEYCLOAK_READ_ONLY=true` to omit mutating tools at startup. This does not
+reduce the Keycloak account's permissions or prevent data disclosure:
+`client_secret_get` remains available, including its explicit secret opt-in.
+Combine read-only mode with scoped Keycloak permissions and narrow queries.
+
+See [event filters and safe read-only examples](docs/events.md).
 
 ## Configuration
 
@@ -76,8 +122,8 @@ development convenience (see `.env.example`); existing environment variables
 always win. MCP clients should pass the variables explicitly in their server
 configuration.
 
-The server authenticates with full administrator rights. Point it at a
-dedicated admin account and, where possible, a non-production realm.
+The server uses the permissions granted to its configured account. Start with
+a dedicated account and, where possible, a non-production realm.
 
 ## Install
 
