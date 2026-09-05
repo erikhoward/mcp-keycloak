@@ -23,6 +23,14 @@ type fakeAdmin struct {
 	deleteRealm              func(ctx context.Context, realm string) error
 	listClients              func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
 	updateClient             func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
+	listClientScopes         func(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
+	getClientScope           func(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
+	createClientScope        func(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error)
+	deleteClientScope        func(ctx context.Context, realm, id string) error
+	addDefaultScope          func(ctx context.Context, realm, clientID, scopeID string) error
+	addOptionalScope         func(ctx context.Context, realm, clientID, scopeID string) error
+	removeDefaultScope       func(ctx context.Context, realm, clientID, scopeID string) error
+	removeOptionalScope      func(ctx context.Context, realm, clientID, scopeID string) error
 	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
 	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
 	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
@@ -49,6 +57,38 @@ func (f fakeAdmin) ListClients(ctx context.Context, realm, clientID string, max 
 
 func (f fakeAdmin) UpdateClient(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error) {
 	return f.updateClient(ctx, realm, rep)
+}
+
+func (f fakeAdmin) ListClientScopes(ctx context.Context, realm string) ([]*gocloak.ClientScope, error) {
+	return f.listClientScopes(ctx, realm)
+}
+
+func (f fakeAdmin) GetClientScope(ctx context.Context, realm, id string) (*gocloak.ClientScope, error) {
+	return f.getClientScope(ctx, realm, id)
+}
+
+func (f fakeAdmin) CreateClientScope(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error) {
+	return f.createClientScope(ctx, realm, scope)
+}
+
+func (f fakeAdmin) DeleteClientScope(ctx context.Context, realm, id string) error {
+	return f.deleteClientScope(ctx, realm, id)
+}
+
+func (f fakeAdmin) AddDefaultScopeToClient(ctx context.Context, realm, clientID, scopeID string) error {
+	return f.addDefaultScope(ctx, realm, clientID, scopeID)
+}
+
+func (f fakeAdmin) AddOptionalScopeToClient(ctx context.Context, realm, clientID, scopeID string) error {
+	return f.addOptionalScope(ctx, realm, clientID, scopeID)
+}
+
+func (f fakeAdmin) RemoveDefaultScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error {
+	return f.removeDefaultScope(ctx, realm, clientID, scopeID)
+}
+
+func (f fakeAdmin) RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error {
+	return f.removeOptionalScope(ctx, realm, clientID, scopeID)
 }
 
 func (f fakeAdmin) CreateUser(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error) {
@@ -236,6 +276,8 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 	for _, name := range []string{
 		"realm_get", "realm_delete",
 		"client_get", "client_delete", "client_update",
+		"client_scope_get", "client_scope_delete",
+		"client_scope_assign", "client_scope_unassign",
 		"user_get", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
@@ -246,6 +288,98 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		if err == nil && !res.IsError {
 			t.Errorf("%s: expected an error when required arguments are missing", name)
 		}
+	}
+}
+
+func TestClientScopeCreateDefaultsProtocol(t *testing.T) {
+	var captured gocloak.ClientScope
+	admin := &fakeAdmin{createClientScope: func(_ context.Context, _ string, scope gocloak.ClientScope) (*gocloak.ClientScope, error) {
+		captured = scope
+		return &gocloak.ClientScope{
+			ID: gocloak.StringP("scope-1"), Name: scope.Name, Description: scope.Description, Protocol: scope.Protocol,
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_scope_create", map[string]any{
+		"realm": "acme", "name": "orders", "description": "Order claims",
+	})
+	if got := deref(captured.Name); got != "orders" {
+		t.Errorf("captured name = %q, want orders", got)
+	}
+	if got := deref(captured.Protocol); got != "openid-connect" {
+		t.Errorf("captured protocol = %q, want openid-connect", got)
+	}
+	if got := deref(captured.Description); got != "Order claims" {
+		t.Errorf("captured description = %q, want Order claims", got)
+	}
+	created := decodeResult[gocloak.ClientScope](t, res)
+	if got := deref(created.ID); got != "scope-1" {
+		t.Errorf("created ID = %q, want scope-1", got)
+	}
+}
+
+func TestClientScopeGetResolvesName(t *testing.T) {
+	admin := &fakeAdmin{
+		listClientScopes: func(context.Context, string) ([]*gocloak.ClientScope, error) {
+			return []*gocloak.ClientScope{{ID: gocloak.StringP("scope-1"), Name: gocloak.StringP("orders")}}, nil
+		},
+		getClientScope: func(_ context.Context, _ string, id string) (*gocloak.ClientScope, error) {
+			if id != "scope-1" {
+				return nil, fmt.Errorf("unexpected scope ID %q", id)
+			}
+			return &gocloak.ClientScope{ID: gocloak.StringP(id), Name: gocloak.StringP("orders"), Protocol: gocloak.StringP("openid-connect")}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_scope_get", map[string]any{"realm": "acme", "name": "orders"})
+	scope := decodeResult[gocloak.ClientScope](t, res)
+	if got := deref(scope.ID); got != "scope-1" {
+		t.Errorf("scope ID = %q, want scope-1", got)
+	}
+}
+
+func TestClientScopeAssignmentUsesInternalIDs(t *testing.T) {
+	var added, removed [2]string
+	admin := &fakeAdmin{
+		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("web-app")}}, nil
+		},
+		listClientScopes: func(context.Context, string) ([]*gocloak.ClientScope, error) {
+			return []*gocloak.ClientScope{{ID: gocloak.StringP("scope-1"), Name: gocloak.StringP("orders")}}, nil
+		},
+		addDefaultScope: func(_ context.Context, _, clientID, scopeID string) error {
+			added = [2]string{clientID, scopeID}
+			return nil
+		},
+		removeOptionalScope: func(_ context.Context, _, clientID, scopeID string) error {
+			removed = [2]string{clientID, scopeID}
+			return nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_scope_assign", map[string]any{
+		"realm": "acme", "clientId": "web-app", "scopeName": "orders",
+	})
+	if added != [2]string{"client-1", "scope-1"} {
+		t.Errorf("default assignment IDs = %v, want client-1 / scope-1", added)
+	}
+	assigned := decodeResult[map[string]any](t, res)
+	if assigned["assigned"] != true || assigned["optional"] != false {
+		t.Errorf("assignment result = %v, want assigned=true and optional=false", assigned)
+	}
+
+	res = callTool(t, cs, "client_scope_unassign", map[string]any{
+		"realm": "acme", "clientId": "web-app", "scopeName": "orders", "optional": true,
+	})
+	if removed != [2]string{"client-1", "scope-1"} {
+		t.Errorf("optional removal IDs = %v, want client-1 / scope-1", removed)
+	}
+	unassigned := decodeResult[map[string]any](t, res)
+	if unassigned["unassigned"] != true || unassigned["optional"] != true {
+		t.Errorf("unassignment result = %v, want unassigned=true and optional=true", unassigned)
 	}
 }
 

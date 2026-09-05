@@ -239,6 +239,113 @@ func (a *Admin) DeleteClient(ctx context.Context, realm, id string) error {
 	return nil
 }
 
+// ListClientScopes returns all client scopes in realm.
+func (a *Admin) ListClientScopes(ctx context.Context, realm string) ([]*gocloak.ClientScope, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scopes, err := a.client.GetClientScopes(ctx, tok, realm)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list client scopes in realm %q", realm), err)
+	}
+	return scopes, nil
+}
+
+// GetClientScope returns the client scope with the internal ID id.
+func (a *Admin) GetClientScope(ctx context.Context, realm, id string) (*gocloak.ClientScope, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := a.client.GetClientScope(ctx, tok, realm, id)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get client scope %q in realm %q", id, realm), err)
+	}
+	return scope, nil
+}
+
+// CreateClientScope creates the client scope described by rep and returns the
+// created representation.
+func (a *Admin) CreateClientScope(ctx context.Context, realm string, rep gocloak.ClientScope) (*gocloak.ClientScope, error) {
+	if rep.Name == nil || *rep.Name == "" {
+		return nil, fmt.Errorf("create client scope in realm %q: empty name", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := a.client.CreateClientScope(ctx, tok, realm, rep)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("create client scope %q in realm %q", *rep.Name, realm), err)
+	}
+	return a.GetClientScope(ctx, realm, id)
+}
+
+// DeleteClientScope deletes the client scope with the internal ID id.
+func (a *Admin) DeleteClientScope(ctx context.Context, realm, id string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteClientScope(ctx, tok, realm, id); err != nil {
+		return wrapErr(fmt.Sprintf("delete client scope %q in realm %q", id, realm), err)
+	}
+	return nil
+}
+
+// AddDefaultScopeToClient adds the scope with scopeID to the client's default
+// scopes.
+func (a *Admin) AddDefaultScopeToClient(ctx context.Context, realm, clientID, scopeID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddDefaultScopeToClient(ctx, tok, realm, clientID, scopeID); err != nil {
+		return wrapErr(fmt.Sprintf("add default client scope %q to client %q in realm %q", scopeID, clientID, realm), err)
+	}
+	return nil
+}
+
+// AddOptionalScopeToClient adds the scope with scopeID to the client's
+// optional scopes.
+func (a *Admin) AddOptionalScopeToClient(ctx context.Context, realm, clientID, scopeID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddOptionalScopeToClient(ctx, tok, realm, clientID, scopeID); err != nil {
+		return wrapErr(fmt.Sprintf("add optional client scope %q to client %q in realm %q", scopeID, clientID, realm), err)
+	}
+	return nil
+}
+
+// RemoveDefaultScopeFromClient removes the scope with scopeID from the
+// client's default scopes.
+func (a *Admin) RemoveDefaultScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.RemoveDefaultScopeFromClient(ctx, tok, realm, clientID, scopeID); err != nil {
+		return wrapErr(fmt.Sprintf("remove default client scope %q from client %q in realm %q", scopeID, clientID, realm), err)
+	}
+	return nil
+}
+
+// RemoveOptionalScopeFromClient removes the scope with scopeID from the
+// client's optional scopes.
+func (a *Admin) RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.RemoveOptionalScopeFromClient(ctx, tok, realm, clientID, scopeID); err != nil {
+		return wrapErr(fmt.Sprintf("remove optional client scope %q from client %q in realm %q", scopeID, clientID, realm), err)
+	}
+	return nil
+}
+
 // Users.
 
 // ListUsers returns users in realm matching the optional search (substring

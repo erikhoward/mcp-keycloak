@@ -69,7 +69,8 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 	}
 
 	userID := createUser(t, cs, realm)
-	createClient(t, cs, realm)
+	clientID := createClient(t, cs, realm)
+	scopeID := createClientScope(t, cs, realm)
 	groupID := createGroup(t, cs, realm)
 	_ = createRealmRole(t, cs, realm)
 
@@ -121,6 +122,60 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		if client.PublicClient == nil || *client.PublicClient {
 			t.Error("publicClient should be unchanged (false)")
 		}
+	})
+
+	t.Run("client scope lifecycle", func(t *testing.T) {
+		res := callTool(t, cs, "client_scope_list", map[string]any{"realm": realm})
+		scopes := decodeResult[[]*gocloak.ClientScope](t, res)
+		if !hasClientScopeID(scopes, scopeID) {
+			t.Fatal("client_scope_list does not include the created orders scope")
+		}
+
+		res = callTool(t, cs, "client_scope_get", map[string]any{"realm": realm, "name": "orders"})
+		got := decodeResult[gocloak.ClientScope](t, res)
+		if deref(got.ID) != scopeID || deref(got.Protocol) != "openid-connect" {
+			t.Errorf("client_scope_get returned ID=%q protocol=%q, want %q/openid-connect", deref(got.ID), deref(got.Protocol), scopeID)
+		}
+
+		callTool(t, cs, "client_scope_assign", map[string]any{
+			"realm": realm, "clientId": "web-app", "scopeName": "orders",
+		})
+		gc := gocloak.NewClient(testBaseURL)
+		tok := verifyToken(t)
+		defaults, err := gc.GetClientsDefaultScopes(t.Context(), tok, realm, clientID)
+		if err != nil {
+			t.Fatalf("checking default client scopes: %v", err)
+		}
+		if !hasClientScopeID(defaults, scopeID) {
+			t.Error("orders scope was not added as a default client scope")
+		}
+
+		callTool(t, cs, "client_scope_unassign", map[string]any{
+			"realm": realm, "clientId": "web-app", "scopeName": "orders",
+		})
+		defaults, err = gc.GetClientsDefaultScopes(t.Context(), tok, realm, clientID)
+		if err != nil {
+			t.Fatalf("checking removed default client scope: %v", err)
+		}
+		if hasClientScopeID(defaults, scopeID) {
+			t.Error("orders scope is still a default client scope after unassign")
+		}
+
+		callTool(t, cs, "client_scope_assign", map[string]any{
+			"realm": realm, "clientId": "web-app", "scopeName": "orders", "optional": true,
+		})
+		optional, err := gc.GetClientsOptionalScopes(t.Context(), tok, realm, clientID)
+		if err != nil {
+			t.Fatalf("checking optional client scopes: %v", err)
+		}
+		if !hasClientScopeID(optional, scopeID) {
+			t.Error("orders scope was not added as an optional client scope")
+		}
+
+		callTool(t, cs, "client_scope_unassign", map[string]any{
+			"realm": realm, "clientId": "web-app", "scopeName": "orders", "optional": true,
+		})
+		callTool(t, cs, "client_scope_delete", map[string]any{"realm": realm, "name": "orders"})
 	})
 
 	t.Run("user list and get", func(t *testing.T) {
@@ -295,6 +350,19 @@ func createClient(t *testing.T, cs *mcp.ClientSession, realm string) string {
 	return id
 }
 
+func createClientScope(t *testing.T, cs *mcp.ClientSession, realm string) string {
+	t.Helper()
+	res := callTool(t, cs, "client_scope_create", map[string]any{
+		"realm": realm, "name": "orders", "description": "Order claims",
+	})
+	scope := decodeResult[gocloak.ClientScope](t, res)
+	id := deref(scope.ID)
+	if id == "" {
+		t.Fatal("client_scope_create returned no ID")
+	}
+	return id
+}
+
 func createGroup(t *testing.T, cs *mcp.ClientSession, realm string) string {
 	t.Helper()
 	res := callTool(t, cs, "group_create", map[string]any{"realm": realm, "name": "engineers"})
@@ -313,6 +381,15 @@ func createRealmRole(t *testing.T, cs *mcp.ClientSession, realm string) string {
 	})
 	role := decodeResult[gocloak.Role](t, res)
 	return deref(role.Name)
+}
+
+func hasClientScopeID(scopes []*gocloak.ClientScope, id string) bool {
+	for _, scope := range scopes {
+		if deref(scope.ID) == id {
+			return true
+		}
+	}
+	return false
 }
 
 // verifyToken returns a fresh admin token for verifying effects straight

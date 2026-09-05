@@ -29,6 +29,15 @@ type AdminAPI interface {
 	GetClientSecret(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
 	DeleteClient(ctx context.Context, realm, id string) error
 
+	ListClientScopes(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
+	GetClientScope(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
+	CreateClientScope(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error)
+	DeleteClientScope(ctx context.Context, realm, id string) error
+	AddDefaultScopeToClient(ctx context.Context, realm, clientID, scopeID string) error
+	AddOptionalScopeToClient(ctx context.Context, realm, clientID, scopeID string) error
+	RemoveDefaultScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error
+	RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error
+
 	ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error)
 	GetUser(ctx context.Context, realm, userID string) (*gocloak.User, error)
 	CreateUser(ctx context.Context, realm string, user gocloak.User) (*gocloak.User, error)
@@ -61,6 +70,7 @@ func New(admin AdminAPI) *mcp.Server {
 	}, nil)
 	addRealmTools(s, admin)
 	addClientTools(s, admin)
+	addClientScopeTools(s, admin)
 	addUserTools(s, admin)
 	addGroupTools(s, admin)
 	addRealmRoleTools(s, admin)
