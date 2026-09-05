@@ -43,7 +43,7 @@ Single test: `go test ./internal/mcpserver/ -run TestRealmCreate`. Integration t
 - golangci-lint must be built with a Go toolchain at least as new as the project's; prebuilt binaries that lag fail with a version error or panic in `go/types`. Fix: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0`.
 - The stdio transport must be `&mcp.StdioTransport{}`, not `&mcp.IOTransport{Reader: os.Stdin, Writer: os.Stdout}` — IOTransport closes its writer on disconnect, which closes `os.Stdout` and kills pending responses.
 - For manual stdio testing, drive the binary with an SDK client (e.g. `mcp.CommandTransport`); hand-rolled JSON-RPC with a stale `protocolVersion` is rejected.
-- gocloak v14 cannot serialize some numeric and slice admin-event query params; `internal/keycloak/admin.go` deliberately applies those filters and the max cap client-side.
+- gocloak v14 cannot serialize some numeric and slice admin-event query params; `internal/keycloak/admin.go` uses gocloak's authenticated Resty transport with explicit bounded pages for those queries.
 - `.env` is gitignored; Keycloak URL/credentials belong there or in the environment, never in code or commits. `.env.example` documents the variables.
 - `go.work` is gitignored — keep this a single module; no nested `go.mod`.
 - Keycloak API failures are returned as MCP tool errors by design (so the model can see and self-correct); do not convert them into protocol errors.

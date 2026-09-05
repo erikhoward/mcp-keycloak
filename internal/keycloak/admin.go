@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,7 @@ const refreshLead = 30 * time.Second
 // All methods are safe for concurrent use.
 type Admin struct {
 	client   *gocloak.GoCloak
+	baseURL  string
 	username string
 	password string
 	realm    string
@@ -37,6 +40,7 @@ type Admin struct {
 func NewAdmin(baseURL, username, password, realm string) *Admin {
 	return &Admin{
 		client:   gocloak.NewClient(baseURL),
+		baseURL:  strings.TrimRight(baseURL, "/"),
 		username: username,
 		password: password,
 		realm:    realm,
@@ -347,81 +351,156 @@ func (a *Admin) RemoveOptionalScopeFromClient(ctx context.Context, realm, client
 	return nil
 }
 
-// ListEvents returns login and user events matching params.
+// ListEvents returns login and user events matching params. Results are
+// fetched in bounded pages because gocloak's generic query serializer cannot
+// encode the Type slice reliably.
 func (a *Admin) ListEvents(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error) {
-	types := params.Type
-	// gocloak's generic query serializer cannot encode the Type slice. Apply
-	// event-type filtering after the request instead.
-	params.Type = nil
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
-	events, err := a.client.GetEvents(ctx, tok, realm, params)
-	if err != nil {
-		return nil, wrapErr(fmt.Sprintf("list events in realm %q", realm), err)
-	}
-	if len(types) > 0 {
-		filtered := events[:0]
-		for _, event := range events {
-			if containsString(types, gocloak.PString(event.Type)) {
-				filtered = append(filtered, event)
-			}
-		}
-		events = filtered
-	}
-	return events, nil
+	max := eventResultLimit(params.Max)
+	query := eventQuery(params)
+	return a.fetchEventPages(ctx, tok, realm, max, query)
 }
 
-// ListAdminEvents returns administrative events matching params.
+// ListAdminEvents returns administrative events matching params. Results are
+// fetched in bounded pages because gocloak v14's generic query serializer
+// cannot encode some numeric and slice admin-event parameters.
 func (a *Admin) ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
-	max := 0
-	if params.Max != nil {
-		max = int(*params.Max)
-	}
-	operationTypes := params.OperationTypes
-	resourceTypes := params.ResourceTypes
-	// gocloak v14's GetAdminEventsParams uses a numeric JSON tag for Max,
-	// and slice fields that its generic query serializer cannot encode. Apply
-	// these filters and the cap after the request while leaving scalar filters
-	// to Keycloak.
-	params.Max = nil
-	params.OperationTypes = nil
-	params.ResourceTypes = nil
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
-	events, err := a.client.GetAdminEvents(ctx, tok, realm, params)
-	if err != nil {
-		return nil, wrapErr(fmt.Sprintf("list admin events in realm %q", realm), err)
+	max := eventResultLimit(params.Max)
+	query := adminEventQuery(params)
+	return a.fetchAdminEventPages(ctx, tok, realm, max, query)
+}
+
+const (
+	eventPageSize = 100
+	eventFetchCap = 10000
+)
+
+func eventResultLimit(value *int32) int {
+	if value == nil || *value <= 0 {
+		return eventPageSize
 	}
-	if len(operationTypes) > 0 || len(resourceTypes) > 0 {
-		filtered := events[:0]
-		for _, event := range events {
-			if len(operationTypes) > 0 && !containsString(operationTypes, gocloak.PString(event.OperationType)) {
-				continue
-			}
-			if len(resourceTypes) > 0 && !containsString(resourceTypes, gocloak.PString(event.ResourceType)) {
-				continue
-			}
-			filtered = append(filtered, event)
+	return int(*value)
+}
+
+func eventQuery(params gocloak.GetEventsParams) url.Values {
+	query := url.Values{}
+	addString(query, "client", params.Client)
+	addString(query, "dateFrom", params.DateFrom)
+	addString(query, "dateTo", params.DateTo)
+	addString(query, "ipAddress", params.IPAddress)
+	addString(query, "user", params.UserID)
+	for _, value := range params.Type {
+		query.Add("type", value)
+	}
+	return query
+}
+
+func adminEventQuery(params gocloak.GetAdminEventsParams) url.Values {
+	query := url.Values{}
+	addString(query, "authClient", params.AuthClient)
+	addString(query, "authIpAddress", params.AuthIPAddress)
+	addString(query, "authRealm", params.AuthRealm)
+	addString(query, "authUser", params.AuthUser)
+	addString(query, "dateFrom", params.DateFrom)
+	addString(query, "dateTo", params.DateTo)
+	addString(query, "resourcePath", params.ResourcePath)
+	for _, value := range params.OperationTypes {
+		query.Add("operationTypes", value)
+	}
+	for _, value := range params.ResourceTypes {
+		query.Add("resourceTypes", value)
+	}
+	return query
+}
+
+func addString(query url.Values, key string, value *string) {
+	if value != nil && *value != "" {
+		query.Set(key, *value)
+	}
+}
+
+func (a *Admin) fetchEventPages(ctx context.Context, token, realm string, max int, query url.Values) ([]*gocloak.EventRepresentation, error) {
+	var events []*gocloak.EventRepresentation
+	for first := 0; first < eventFetchCap && len(events) < max; first += eventPageSize {
+		page := make([]*gocloak.EventRepresentation, 0, eventPageSize)
+		pageQuery := cloneURLValues(query)
+		requested := minInt(eventPageSize, max-len(events))
+		pageQuery.Set("first", strconv.Itoa(first))
+		pageQuery.Set("max", strconv.Itoa(requested))
+		response, err := a.client.GetRequestWithBearerAuth(ctx, token).
+			SetResult(&page).
+			SetQueryParamsFromValues(pageQuery).
+			Get(a.eventEndpoint(realm, "events"))
+		if err != nil {
+			return nil, wrapErr(fmt.Sprintf("list events in realm %q", realm), err)
 		}
-		events = filtered
-	}
-	if max > 0 && len(events) > max {
-		events = events[:max]
+		if response.IsError() {
+			return nil, fmt.Errorf("list events in realm %q: keycloak API error %d: %s", realm, response.StatusCode(), response.String())
+		}
+		events = append(events, page...)
+		if len(events) >= max {
+			return events[:max], nil
+		}
+		if len(page) < requested {
+			break
+		}
 	}
 	return events, nil
 }
 
-func containsString(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
+func (a *Admin) fetchAdminEventPages(ctx context.Context, token, realm string, max int, query url.Values) ([]*gocloak.AdminEventRepresentation, error) {
+	var events []*gocloak.AdminEventRepresentation
+	for first := 0; first < eventFetchCap && len(events) < max; first += eventPageSize {
+		page := make([]*gocloak.AdminEventRepresentation, 0, eventPageSize)
+		pageQuery := cloneURLValues(query)
+		requested := minInt(eventPageSize, max-len(events))
+		pageQuery.Set("first", strconv.Itoa(first))
+		pageQuery.Set("max", strconv.Itoa(requested))
+		response, err := a.client.GetRequestWithBearerAuth(ctx, token).
+			SetResult(&page).
+			SetQueryParamsFromValues(pageQuery).
+			Get(a.eventEndpoint(realm, "admin-events"))
+		if err != nil {
+			return nil, wrapErr(fmt.Sprintf("list admin events in realm %q", realm), err)
+		}
+		if response.IsError() {
+			return nil, fmt.Errorf("list admin events in realm %q: keycloak API error %d: %s", realm, response.StatusCode(), response.String())
+		}
+		events = append(events, page...)
+		if len(events) >= max {
+			return events[:max], nil
+		}
+		if len(page) < requested {
+			break
 		}
 	}
-	return false
+	return events, nil
+}
+
+func cloneURLValues(source url.Values) url.Values {
+	clone := make(url.Values, len(source))
+	for key, values := range source {
+		clone[key] = append([]string(nil), values...)
+	}
+	return clone
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func (a *Admin) eventEndpoint(realm, endpoint string) string {
+	return a.baseURL + "/admin/realms/" + url.PathEscape(realm) + "/" + endpoint
 }
 
 // ListIdentityProviders returns all identity providers configured in realm.
