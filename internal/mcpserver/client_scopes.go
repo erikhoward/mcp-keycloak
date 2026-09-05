@@ -44,7 +44,7 @@ func resolveClientScope(ctx context.Context, admin AdminAPI, realm, name string)
 	return nil, fmt.Errorf("client scope %q not found in realm %q", name, realm)
 }
 
-func addClientScopeTools(s *mcp.Server, admin AdminAPI) {
+func addClientScopeTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_scope_list",
 		Title:       "List client scopes",
@@ -74,6 +74,9 @@ func addClientScopeTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, full, nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_scope_create",

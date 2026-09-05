@@ -25,7 +25,7 @@ type updateRealmInput struct {
 	Enabled     *bool   `json:"enabled,omitempty" jsonschema:"whether the realm is enabled; omit to leave unchanged"`
 }
 
-func addRealmTools(s *mcp.Server, admin AdminAPI) {
+func addRealmTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_list",
 		Title:       "List realms",
@@ -51,6 +51,9 @@ func addRealmTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, realm, nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_create",

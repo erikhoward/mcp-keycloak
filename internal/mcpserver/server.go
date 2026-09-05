@@ -15,6 +15,11 @@ import (
 // with the tag version through the linker.
 var serverVersion = "0.1.0"
 
+// Options controls which MCP tools are advertised.
+type Options struct {
+	ReadOnly bool
+}
+
 // AdminAPI is the subset of Keycloak administration the tools rely on.
 // *keycloak.Admin implements it; tests use fakes.
 type AdminAPI interface {
@@ -73,17 +78,23 @@ var _ AdminAPI = (*keycloak.Admin)(nil)
 // New returns an MCP server exposing Keycloak administration tools backed by
 // the given admin client.
 func New(admin AdminAPI) *mcp.Server {
+	return NewWithOptions(admin, Options{})
+}
+
+// NewWithOptions returns an MCP server backed by admin with the requested
+// safety settings.
+func NewWithOptions(admin AdminAPI, options Options) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-keycloak",
 		Version: serverVersion,
 	}, nil)
-	addRealmTools(s, admin)
-	addClientTools(s, admin)
-	addClientScopeTools(s, admin)
+	addRealmTools(s, admin, options)
+	addClientTools(s, admin, options)
+	addClientScopeTools(s, admin, options)
 	addEventTools(s, admin)
-	addIdentityProviderTools(s, admin)
-	addUserTools(s, admin)
-	addGroupTools(s, admin)
-	addRealmRoleTools(s, admin)
+	addIdentityProviderTools(s, admin, options)
+	addUserTools(s, admin, options)
+	addGroupTools(s, admin, options)
+	addRealmRoleTools(s, admin, options)
 	return s
 }

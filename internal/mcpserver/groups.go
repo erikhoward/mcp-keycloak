@@ -23,7 +23,7 @@ type groupRefInput struct {
 	GroupID string `json:"groupId" jsonschema:"internal group ID (UUID) as returned by group_list or group_create"`
 }
 
-func addGroupTools(s *mcp.Server, admin AdminAPI) {
+func addGroupTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "group_list",
 		Title:       "List groups",
@@ -36,6 +36,9 @@ func addGroupTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, nonNil(groups), nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "group_create",

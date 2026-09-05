@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +32,8 @@ type Config struct {
 	// KeycloakCACertFile optionally points to a PEM-encoded trusted CA bundle
 	// (env KEYCLOAK_CA_CERT_FILE).
 	KeycloakCACertFile string
+	// ReadOnly disables all mutating MCP tools (env KEYCLOAK_READ_ONLY).
+	ReadOnly bool
 }
 
 const defaultKeycloakTimeout = 30 * time.Second
@@ -46,6 +49,7 @@ func Load() (Config, error) {
 		AdminRealm:         os.Getenv("KEYCLOAK_ADMIN_REALM"),
 		KeycloakTimeout:    defaultKeycloakTimeout,
 		KeycloakCACertFile: strings.TrimSpace(os.Getenv("KEYCLOAK_CA_CERT_FILE")),
+		ReadOnly:           false,
 	}
 	if cfg.AdminRealm == "" {
 		cfg.AdminRealm = "master"
@@ -70,6 +74,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid KEYCLOAK_TIMEOUT %q: use a positive duration such as 30s or 2m", rawTimeout)
 		}
 		cfg.KeycloakTimeout = timeout
+	}
+	if rawReadOnly := strings.TrimSpace(os.Getenv("KEYCLOAK_READ_ONLY")); rawReadOnly != "" {
+		readOnly, err := strconv.ParseBool(rawReadOnly)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid KEYCLOAK_READ_ONLY %q: use true or false", rawReadOnly)
+		}
+		cfg.ReadOnly = readOnly
 	}
 	if err := validateKeycloakURL(cfg.KeycloakURL); err != nil {
 		return Config{}, err

@@ -116,3 +116,23 @@ func TestLoadTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadOnly(t *testing.T) {
+	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_READ_ONLY", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.ReadOnly {
+		t.Error("ReadOnly = false, want true")
+	}
+
+	t.Setenv("KEYCLOAK_READ_ONLY", "not-a-bool")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load with invalid KEYCLOAK_READ_ONLY: expected an error")
+	}
+}

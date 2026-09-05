@@ -23,7 +23,7 @@ type realmRoleRefInput struct {
 	Name  string `json:"name" jsonschema:"role name"`
 }
 
-func addRealmRoleTools(s *mcp.Server, admin AdminAPI) {
+func addRealmRoleTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_role_list",
 		Title:       "List realm roles",
@@ -36,6 +36,9 @@ func addRealmRoleTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, nonNil(roles), nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_role_create",

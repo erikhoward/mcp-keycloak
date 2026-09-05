@@ -61,7 +61,7 @@ type userGroupInput struct {
 	GroupID string `json:"groupId" jsonschema:"internal group ID (UUID) as returned by group_list or group_create"`
 }
 
-func addUserTools(s *mcp.Server, admin AdminAPI) {
+func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_list",
 		Title:       "List users",
@@ -87,6 +87,9 @@ func addUserTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, user, nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_create",

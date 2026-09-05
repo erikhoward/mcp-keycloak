@@ -36,7 +36,7 @@ type identityProviderInput struct {
 	PostBrokerLoginFlow  *string `json:"postBrokerLoginFlowAlias,omitempty" jsonschema:"post-broker-login flow alias"`
 }
 
-func addIdentityProviderTools(s *mcp.Server, admin AdminAPI) {
+func addIdentityProviderTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "identity_provider_list",
 		Title:       "List identity providers",
@@ -62,6 +62,9 @@ func addIdentityProviderTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, redactIdentityProvider(provider), nil
 	})
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "identity_provider_create",

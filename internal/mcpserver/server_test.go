@@ -158,8 +158,12 @@ func (f fakeAdmin) RemoveUserFromGroup(ctx context.Context, realm, userID, group
 // newTestClient connects an MCP client session to a server built from admin
 // over an in-memory transport.
 func newTestClient(t *testing.T, admin AdminAPI) *mcp.ClientSession {
+	return newTestClientWithOptions(t, admin, Options{})
+}
+
+func newTestClientWithOptions(t *testing.T, admin AdminAPI, options Options) *mcp.ClientSession {
 	t.Helper()
-	srv := New(admin)
+	srv := NewWithOptions(admin, options)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	go func() {
 		_ = srv.Run(t.Context(), serverTransport)
@@ -181,6 +185,41 @@ func TestServerAdvertisesVersion(t *testing.T) {
 	cs := newTestClient(t, &fakeAdmin{})
 	if got := cs.InitializeResult().ServerInfo.Version; got != serverVersion {
 		t.Errorf("server version = %q, want %q", got, serverVersion)
+	}
+}
+
+func TestReadOnlyOmitsMutatingTools(t *testing.T) {
+	cs := newTestClientWithOptions(t, &fakeAdmin{}, Options{ReadOnly: true})
+	result, err := cs.ListTools(t.Context(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	tools := make(map[string]bool, len(result.Tools))
+	for _, tool := range result.Tools {
+		tools[tool.Name] = true
+	}
+	for _, name := range []string{
+		"realm_create", "realm_update", "realm_delete",
+		"client_create", "client_update", "client_delete",
+		"client_scope_create", "client_scope_delete", "client_scope_assign", "client_scope_unassign",
+		"identity_provider_create", "identity_provider_update", "identity_provider_delete",
+		"user_create", "user_update", "user_set_password", "user_delete",
+		"user_add_realm_role", "user_remove_realm_role", "user_add_to_group", "user_remove_from_group",
+		"group_create", "group_delete", "realm_role_create", "realm_role_delete",
+	} {
+		if tools[name] {
+			t.Errorf("read-only server advertises mutating tool %q", name)
+		}
+	}
+	for _, name := range []string{
+		"realm_list", "realm_get", "client_list", "client_get", "client_secret_get",
+		"client_scope_list", "client_scope_get", "event_admin_list", "event_login_list",
+		"identity_provider_list", "identity_provider_get", "user_list", "user_get",
+		"group_list", "realm_role_list",
+	} {
+		if !tools[name] {
+			t.Errorf("read-only server omitted read tool %q", name)
+		}
 	}
 }
 

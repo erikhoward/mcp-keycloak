@@ -69,7 +69,7 @@ type updateClientInput struct {
 	ServiceAccountsEnabled    *bool    `json:"serviceAccountsEnabled,omitempty" jsonschema:"enable service accounts for the client credentials grant; omit to leave unchanged"`
 }
 
-func addClientTools(s *mcp.Server, admin AdminAPI) {
+func addClientTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_list",
 		Title:       "List clients",
@@ -95,6 +95,10 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 		}
 		return nil, client, nil
 	})
+	addClientSecretTool(s, admin)
+	if options.ReadOnly {
+		return
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_create",
@@ -151,6 +155,24 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name:        "client_delete",
+		Title:       "Delete client",
+		Description: "Delete a client by its client identifier. This cannot be undone.",
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in clientRefInput) (*mcp.CallToolResult, any, error) {
+		client, err := resolveClient(ctx, admin, in.Realm, in.ClientID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := admin.DeleteClient(ctx, in.Realm, deref(client.ID)); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "clientId": in.ClientID, "deleted": true}, nil
+	})
+}
+
+func addClientSecretTool(s *mcp.Server, admin AdminAPI) {
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_secret_get",
 		Title:       "Get client secret",
 		Description: "Inspect whether a confidential client has a secret. The secret is omitted by default; set includeSecret=true only when explicitly needed because MCP clients may retain tool transcripts.",
@@ -177,21 +199,5 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 			message = "Client secret retrieved in structured output; treat it as sensitive and do not repeat or store it."
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, output, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "client_delete",
-		Title:       "Delete client",
-		Description: "Delete a client by its client identifier. This cannot be undone.",
-		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in clientRefInput) (*mcp.CallToolResult, any, error) {
-		client, err := resolveClient(ctx, admin, in.Realm, in.ClientID)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := admin.DeleteClient(ctx, in.Realm, deref(client.ID)); err != nil {
-			return nil, nil, err
-		}
-		return nil, map[string]any{"realm": in.Realm, "clientId": in.ClientID, "deleted": true}, nil
 	})
 }
