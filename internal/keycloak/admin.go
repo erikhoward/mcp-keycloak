@@ -196,6 +196,23 @@ func (a *Admin) CreateClient(ctx context.Context, realm string, rep gocloak.Clie
 	return a.GetClient(ctx, realm, id)
 }
 
+// UpdateClient updates the client described by rep (identified by rep.ID)
+// and returns the updated representation. Only fields set on rep are
+// changed.
+func (a *Admin) UpdateClient(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error) {
+	if rep.ID == nil || *rep.ID == "" {
+		return nil, fmt.Errorf("update client in realm %q: empty internal ID", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.client.UpdateClient(ctx, tok, realm, rep); err != nil {
+		return nil, wrapErr(fmt.Sprintf("update client %q in realm %q", *rep.ID, realm), err)
+	}
+	return a.GetClient(ctx, realm, *rep.ID)
+}
+
 // GetClientSecret returns the current secret of the client with the internal
 // ID id.
 func (a *Admin) GetClientSecret(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error) {

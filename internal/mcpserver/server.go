@@ -25,6 +25,7 @@ type AdminAPI interface {
 	ListClients(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
 	GetClient(ctx context.Context, realm, id string) (*gocloak.Client, error)
 	CreateClient(ctx context.Context, realm string, client gocloak.Client) (*gocloak.Client, error)
+	UpdateClient(ctx context.Context, realm string, client gocloak.Client) (*gocloak.Client, error)
 	GetClientSecret(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
 	DeleteClient(ctx context.Context, realm, id string) error
 

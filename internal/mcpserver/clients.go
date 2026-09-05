@@ -45,6 +45,17 @@ func resolveClient(ctx context.Context, admin AdminAPI, realm, clientID string) 
 	return nil, fmt.Errorf("client %q not found in realm %q", clientID, realm)
 }
 
+type updateClientInput struct {
+	Realm                     string   `json:"realm" jsonschema:"realm name"`
+	ClientID                  string   `json:"clientId" jsonschema:"client identifier (not the internal UUID), e.g. \"my-app\""`
+	Name                      *string  `json:"name,omitempty" jsonschema:"new display name; omit to leave unchanged"`
+	Description               *string  `json:"description,omitempty" jsonschema:"new description; omit to leave unchanged"`
+	Public                    *bool    `json:"public,omitempty" jsonschema:"whether the client is public (no secret); omit to leave unchanged"`
+	RedirectURIs              []string `json:"redirectURIs,omitempty" jsonschema:"allowed redirect URIs for the browser login flow; omit to leave unchanged, set [] to clear"`
+	DirectAccessGrantsEnabled *bool    `json:"directAccessGrantsEnabled,omitempty" jsonschema:"allow the password grant (direct access grants); omit to leave unchanged"`
+	ServiceAccountsEnabled    *bool    `json:"serviceAccountsEnabled,omitempty" jsonschema:"enable service accounts for the client credentials grant; omit to leave unchanged"`
+}
+
 func addClientTools(s *mcp.Server, admin AdminAPI) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_list",
@@ -97,6 +108,33 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 			return nil, nil, err
 		}
 		return nil, created, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "client_update",
+		Title:       "Update client",
+		Description: "Update a client by its client identifier. Only the provided fields are changed. Returns the updated client.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateClientInput) (*mcp.CallToolResult, any, error) {
+		client, err := resolveClient(ctx, admin, in.Realm, in.ClientID)
+		if err != nil {
+			return nil, nil, err
+		}
+		rep := gocloak.Client{
+			ID:                        client.ID,
+			Name:                      in.Name,
+			Description:               in.Description,
+			PublicClient:              in.Public,
+			DirectAccessGrantsEnabled: in.DirectAccessGrantsEnabled,
+			ServiceAccountsEnabled:    in.ServiceAccountsEnabled,
+		}
+		if in.RedirectURIs != nil {
+			rep.RedirectURIs = &in.RedirectURIs
+		}
+		updated, err := admin.UpdateClient(ctx, in.Realm, rep)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, updated, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

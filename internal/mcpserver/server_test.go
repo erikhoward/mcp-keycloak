@@ -22,6 +22,7 @@ type fakeAdmin struct {
 	createRealm              func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
 	deleteRealm              func(ctx context.Context, realm string) error
 	listClients              func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
+	updateClient             func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
 	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
 	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
 	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
@@ -44,6 +45,10 @@ func (f fakeAdmin) DeleteRealm(ctx context.Context, realm string) error {
 
 func (f fakeAdmin) ListClients(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error) {
 	return f.listClients(ctx, realm, clientID, max)
+}
+
+func (f fakeAdmin) UpdateClient(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error) {
+	return f.updateClient(ctx, realm, rep)
 }
 
 func (f fakeAdmin) CreateUser(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error) {
@@ -230,7 +235,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 
 	for _, name := range []string{
 		"realm_get", "realm_delete",
-		"client_get", "client_delete",
+		"client_get", "client_delete", "client_update",
 		"user_get", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
@@ -327,6 +332,75 @@ func TestUserSetPasswordDefaultsToPermanent(t *testing.T) {
 	})
 	if gotTemporary {
 		t.Error("password should be permanent (temporary=false) by default")
+	}
+}
+
+func TestClientUpdatePartialChanges(t *testing.T) {
+	resolve := func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+		return []*gocloak.Client{{ID: gocloak.StringP("id-1"), ClientID: gocloak.StringP("app")}}, nil
+	}
+	var captured gocloak.Client
+	admin := &fakeAdmin{
+		listClients: resolve,
+		updateClient: func(_ context.Context, _ string, rep gocloak.Client) (*gocloak.Client, error) {
+			captured = rep
+			echo := rep
+			echo.ClientID = gocloak.StringP("app")
+			return &echo, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_update", map[string]any{
+		"realm": "acme", "clientId": "app",
+		"name": "App v2", "redirectURIs": []string{"https://app.example.com/cb"},
+		"serviceAccountsEnabled": true,
+	})
+	if got := deref(captured.ID); got != "id-1" {
+		t.Errorf("captured internal ID = %q, want id-1", got)
+	}
+	if got := deref(captured.Name); got != "App v2" {
+		t.Errorf("captured name = %q, want %q", got, "App v2")
+	}
+	if captured.RedirectURIs == nil || len(*captured.RedirectURIs) != 1 || (*captured.RedirectURIs)[0] != "https://app.example.com/cb" {
+		t.Errorf("captured redirectURIs = %v, want [https://app.example.com/cb]", captured.RedirectURIs)
+	}
+	if captured.ServiceAccountsEnabled == nil || !*captured.ServiceAccountsEnabled {
+		t.Error("serviceAccountsEnabled should be set to true")
+	}
+	// Fields not provided must stay nil so Keycloak leaves them unchanged.
+	if captured.Description != nil {
+		t.Errorf("description = %v, want nil (unchanged)", captured.Description)
+	}
+	if captured.DirectAccessGrantsEnabled != nil {
+		t.Errorf("directAccessGrantsEnabled = %v, want nil (unchanged)", captured.DirectAccessGrantsEnabled)
+	}
+	if captured.PublicClient != nil {
+		t.Errorf("publicClient = %v, want nil (unchanged)", captured.PublicClient)
+	}
+	client := decodeResult[gocloak.Client](t, res)
+	if got := deref(client.Name); got != "App v2" {
+		t.Errorf("result name = %q, want %q", got, "App v2")
+	}
+}
+
+func TestClientUpdateOmittedRedirectURIsUnchanged(t *testing.T) {
+	resolve := func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+		return []*gocloak.Client{{ID: gocloak.StringP("id-1"), ClientID: gocloak.StringP("app")}}, nil
+	}
+	var captured gocloak.Client
+	admin := &fakeAdmin{
+		listClients: resolve,
+		updateClient: func(_ context.Context, _ string, rep gocloak.Client) (*gocloak.Client, error) {
+			captured = rep
+			return &rep, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	callTool(t, cs, "client_update", map[string]any{"realm": "acme", "clientId": "app", "name": "App v3"})
+	if captured.RedirectURIs != nil {
+		t.Errorf("redirectURIs = %v, want nil when omitted", captured.RedirectURIs)
 	}
 }
 

@@ -97,6 +97,32 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("client update", func(t *testing.T) {
+		res := callTool(t, cs, "client_update", map[string]any{
+			"realm": realm, "clientId": "web-app",
+			"name":                   "Web App v2",
+			"redirectURIs":           []string{"https://app.example.com/callback"},
+			"serviceAccountsEnabled": true,
+		})
+		client := decodeResult[gocloak.Client](t, res)
+		if got := deref(client.Name); got != "Web App v2" {
+			t.Errorf("name = %q, want %q", got, "Web App v2")
+		}
+		if client.RedirectURIs == nil || len(*client.RedirectURIs) != 1 || (*client.RedirectURIs)[0] != "https://app.example.com/callback" {
+			t.Errorf("redirectURIs = %v, want the updated URI", client.RedirectURIs)
+		}
+		if client.ServiceAccountsEnabled == nil || !*client.ServiceAccountsEnabled {
+			t.Error("serviceAccountsEnabled should be true after client_update")
+		}
+		// Fields not sent must keep their original values.
+		if client.DirectAccessGrantsEnabled == nil || *client.DirectAccessGrantsEnabled {
+			t.Error("directAccessGrantsEnabled should be unchanged (false)")
+		}
+		if client.PublicClient == nil || *client.PublicClient {
+			t.Error("publicClient should be unchanged (false)")
+		}
+	})
+
 	t.Run("user list and get", func(t *testing.T) {
 		res := callTool(t, cs, "user_list", map[string]any{"realm": realm, "username": "alice"})
 		users := decodeResult[[]gocloak.User](t, res)
