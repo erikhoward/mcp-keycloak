@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -31,6 +31,8 @@ type fakeAdmin struct {
 	addOptionalScope         func(ctx context.Context, realm, clientID, scopeID string) error
 	removeDefaultScope       func(ctx context.Context, realm, clientID, scopeID string) error
 	removeOptionalScope      func(ctx context.Context, realm, clientID, scopeID string) error
+	listEvents               func(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
+	listAdminEvents          func(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
 	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
 	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
 	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
@@ -89,6 +91,14 @@ func (f fakeAdmin) RemoveDefaultScopeFromClient(ctx context.Context, realm, clie
 
 func (f fakeAdmin) RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error {
 	return f.removeOptionalScope(ctx, realm, clientID, scopeID)
+}
+
+func (f fakeAdmin) ListEvents(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error) {
+	return f.listEvents(ctx, realm, params)
+}
+
+func (f fakeAdmin) ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
+	return f.listAdminEvents(ctx, realm, params)
 }
 
 func (f fakeAdmin) CreateUser(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error) {
@@ -278,6 +288,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"client_get", "client_delete", "client_update",
 		"client_scope_get", "client_scope_delete",
 		"client_scope_assign", "client_scope_unassign",
+		"event_admin_list", "event_login_list",
 		"user_get", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
@@ -288,6 +299,62 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		if err == nil && !res.IsError {
 			t.Errorf("%s: expected an error when required arguments are missing", name)
 		}
+	}
+}
+
+func TestAdminEventListMapsFilters(t *testing.T) {
+	var captured gocloak.GetAdminEventsParams
+	admin := &fakeAdmin{
+		listAdminEvents: func(_ context.Context, _ string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
+			captured = params
+			return []*gocloak.AdminEventRepresentation{{OperationType: gocloak.StringP("CREATE")}}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "event_admin_list", map[string]any{
+		"realm": "acme", "authClient": "admin-cli", "authUser": "u-1",
+		"operationTypes": []string{"CREATE", "UPDATE"}, "resourceTypes": []string{"USER"}, "max": 25,
+	})
+	if deref(captured.AuthClient) != "admin-cli" || deref(captured.AuthUser) != "u-1" {
+		t.Errorf("auth filters = %q/%q, want admin-cli/u-1", deref(captured.AuthClient), deref(captured.AuthUser))
+	}
+	if len(captured.OperationTypes) != 2 || captured.OperationTypes[0] != "CREATE" || len(captured.ResourceTypes) != 1 || captured.ResourceTypes[0] != "USER" {
+		t.Errorf("event filters = operations %v/resources %v", captured.OperationTypes, captured.ResourceTypes)
+	}
+	if captured.Max == nil || *captured.Max != 25 {
+		t.Errorf("max = %v, want 25", captured.Max)
+	}
+	if len(decodeResult[[]gocloak.AdminEventRepresentation](t, res)) != 1 {
+		t.Error("expected one admin event")
+	}
+}
+
+func TestLoginEventListMapsFiltersAndDefaultsMax(t *testing.T) {
+	var captured gocloak.GetEventsParams
+	admin := &fakeAdmin{
+		listEvents: func(_ context.Context, _ string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error) {
+			captured = params
+			return []*gocloak.EventRepresentation{{Type: gocloak.StringP("LOGIN")}}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "event_login_list", map[string]any{
+		"realm": "acme", "clientId": "web-app", "userId": "u-1",
+		"ipAddress": "127.0.0.1", "types": []string{"LOGIN", "LOGIN_ERROR"},
+	})
+	if deref(captured.Client) != "web-app" || deref(captured.UserID) != "u-1" || deref(captured.IPAddress) != "127.0.0.1" {
+		t.Errorf("login filters = client=%q user=%q ip=%q", deref(captured.Client), deref(captured.UserID), deref(captured.IPAddress))
+	}
+	if len(captured.Type) != 2 || captured.Type[0] != "LOGIN" || captured.Type[1] != "LOGIN_ERROR" {
+		t.Errorf("types = %v, want LOGIN/LOGIN_ERROR", captured.Type)
+	}
+	if captured.Max == nil || *captured.Max != int32(defaultMax) {
+		t.Errorf("max = %v, want default %d", captured.Max, defaultMax)
+	}
+	if len(decodeResult[[]gocloak.EventRepresentation](t, res)) != 1 {
+		t.Error("expected one login event")
 	}
 }
 
@@ -496,7 +563,7 @@ func TestClientUpdatePartialChanges(t *testing.T) {
 	if got := deref(captured.Name); got != "App v2" {
 		t.Errorf("captured name = %q, want %q", got, "App v2")
 	}
-	if captured.RedirectURIs == nil || len(*captured.RedirectURIs) != 1 || (*captured.RedirectURIs)[0] != "https://app.example.com/cb" {
+	if len(captured.RedirectURIs) != 1 || captured.RedirectURIs[0] != "https://app.example.com/cb" {
 		t.Errorf("captured redirectURIs = %v, want [https://app.example.com/cb]", captured.RedirectURIs)
 	}
 	if captured.ServiceAccountsEnabled == nil || !*captured.ServiceAccountsEnabled {

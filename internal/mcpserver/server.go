@@ -5,7 +5,7 @@ package mcpserver
 import (
 	"context"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/erikhoward/mcp-keycloak/internal/keycloak"
@@ -37,6 +37,8 @@ type AdminAPI interface {
 	AddOptionalScopeToClient(ctx context.Context, realm, clientID, scopeID string) error
 	RemoveDefaultScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error
 	RemoveOptionalScopeFromClient(ctx context.Context, realm, clientID, scopeID string) error
+	ListEvents(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
+	ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
 
 	ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error)
 	GetUser(ctx context.Context, realm, userID string) (*gocloak.User, error)
@@ -71,6 +73,7 @@ func New(admin AdminAPI) *mcp.Server {
 	addRealmTools(s, admin)
 	addClientTools(s, admin)
 	addClientScopeTools(s, admin)
+	addEventTools(s, admin)
 	addUserTools(s, admin)
 	addGroupTools(s, admin)
 	addRealmRoleTools(s, admin)

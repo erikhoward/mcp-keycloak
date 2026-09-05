@@ -15,6 +15,7 @@ API. Speaks MCP over stdio. MIT licensed.
 | Realms | `realm_list`, `realm_get`, `realm_create`, `realm_update`, `realm_delete` |
 | Clients | `client_list`, `client_get`, `client_create`, `client_update`, `client_secret_get`, `client_delete` |
 | Client scopes | `client_scope_list`, `client_scope_get`, `client_scope_create`, `client_scope_delete`, `client_scope_assign`, `client_scope_unassign` |
+| Audit events | `event_admin_list`, `event_login_list` |
 | Users | `user_list`, `user_get`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group` |
 | Groups | `group_list`, `group_create`, `group_delete` |
 | Realm roles | `realm_role_list`, `realm_role_create`, `realm_role_delete` |
@@ -29,6 +30,9 @@ Notes for agents calling the tools:
 - Created clients are confidential (with an auto-generated secret, fetchable
   via `client_secret_get`) unless `public: true` is passed.
 - List tools return at most 100 results unless a smaller `max` is given.
+- `event_admin_list` requires Admin Events enabled in the realm; `event_login_list`
+  requires user events enabled. Event type and admin operation/resource filters
+  are supported.
 - Failures surface as MCP tool errors with the Keycloak API status and
   message, so the model can see and correct them.
 

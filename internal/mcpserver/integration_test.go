@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	keycloaktc "github.com/stillya/testcontainers-keycloak"
 
@@ -67,6 +67,14 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 	if deref(created.Realm) != realm {
 		t.Fatalf("realm_create returned realm %q, want %q", deref(created.Realm), realm)
 	}
+	if _, err := testAdmin.UpdateRealm(t.Context(), gocloak.RealmRepresentation{
+		Realm:                     gocloak.StringP(realm),
+		EventsEnabled:             gocloak.BoolP(true),
+		AdminEventsEnabled:        gocloak.BoolP(true),
+		AdminEventsDetailsEnabled: gocloak.BoolP(false),
+	}); err != nil {
+		t.Fatalf("enable Keycloak events: %v", err)
+	}
 
 	userID := createUser(t, cs, realm)
 	clientID := createClient(t, cs, realm)
@@ -109,7 +117,7 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		if got := deref(client.Name); got != "Web App v2" {
 			t.Errorf("name = %q, want %q", got, "Web App v2")
 		}
-		if client.RedirectURIs == nil || len(*client.RedirectURIs) != 1 || (*client.RedirectURIs)[0] != "https://app.example.com/callback" {
+		if len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != "https://app.example.com/callback" {
 			t.Errorf("redirectURIs = %v, want the updated URI", client.RedirectURIs)
 		}
 		if client.ServiceAccountsEnabled == nil || !*client.ServiceAccountsEnabled {
@@ -121,6 +129,53 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 		if client.PublicClient == nil || *client.PublicClient {
 			t.Error("publicClient should be unchanged (false)")
+		}
+	})
+
+	t.Run("event audit", func(t *testing.T) {
+		callTool(t, cs, "client_update", map[string]any{
+			"realm": realm, "clientId": "web-app", "directAccessGrantsEnabled": true,
+		})
+		callTool(t, cs, "user_set_password", map[string]any{
+			"realm": realm, "userId": userID, "password": "correct horse battery staple", "temporary": false,
+		})
+
+		gc := gocloak.NewClient(testBaseURL)
+		tok := verifyToken(t)
+		secret, err := gc.GetClientSecret(t.Context(), tok, realm, clientID)
+		if err != nil {
+			t.Fatalf("get client secret for login event: %v", err)
+		}
+		if _, err := gc.Login(t.Context(), "web-app", deref(secret.Value), realm, "alice", "correct horse battery staple"); err != nil {
+			t.Fatalf("trigger login event: %v", err)
+		}
+
+		res := callTool(t, cs, "event_admin_list", map[string]any{
+			"realm": realm, "operationTypes": []string{"UPDATE"}, "resourceTypes": []string{"CLIENT"},
+		})
+		adminEvents := decodeResult[[]*gocloak.AdminEventRepresentation](t, res)
+		foundAdminUpdate := false
+		for _, event := range adminEvents {
+			if deref(event.OperationType) == "UPDATE" && deref(event.ResourceType) == "CLIENT" {
+				foundAdminUpdate = true
+			}
+		}
+		if !foundAdminUpdate {
+			t.Error("event_admin_list did not return the client update event")
+		}
+
+		res = callTool(t, cs, "event_login_list", map[string]any{
+			"realm": realm, "userId": userID, "types": []string{"LOGIN"},
+		})
+		loginEvents := decodeResult[[]*gocloak.EventRepresentation](t, res)
+		foundLogin := false
+		for _, event := range loginEvents {
+			if deref(event.Type) == "LOGIN" && deref(event.UserID) == userID {
+				foundLogin = true
+			}
+		}
+		if !foundLogin {
+			t.Error("event_login_list did not return the user login event")
 		}
 	})
 

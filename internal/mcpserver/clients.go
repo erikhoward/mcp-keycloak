@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -93,7 +93,7 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 			ClientID:                  gocloak.StringP(in.ClientID),
 			PublicClient:              gocloak.BoolP(in.Public != nil && *in.Public),
 			StandardFlowEnabled:       gocloak.BoolP(len(in.RedirectURIs) > 0),
-			RedirectURIs:              &in.RedirectURIs,
+			RedirectURIs:              in.RedirectURIs,
 			DirectAccessGrantsEnabled: gocloak.BoolP(in.DirectAccessGrantsEnabled != nil && *in.DirectAccessGrantsEnabled),
 			ServiceAccountsEnabled:    gocloak.BoolP(in.ServiceAccountsEnabled != nil && *in.ServiceAccountsEnabled),
 		}
@@ -128,7 +128,7 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 			ServiceAccountsEnabled:    in.ServiceAccountsEnabled,
 		}
 		if in.RedirectURIs != nil {
-			rep.RedirectURIs = &in.RedirectURIs
+			rep.RedirectURIs = in.RedirectURIs
 		}
 		updated, err := admin.UpdateClient(ctx, in.Realm, rep)
 		if err != nil {

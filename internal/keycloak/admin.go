@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Nerzal/gocloak/v13"
+	"github.com/Nerzal/gocloak/v14"
 )
 
 // refreshLead is how long before its expiry a cached admin token is refreshed.
@@ -344,6 +344,83 @@ func (a *Admin) RemoveOptionalScopeFromClient(ctx context.Context, realm, client
 		return wrapErr(fmt.Sprintf("remove optional client scope %q from client %q in realm %q", scopeID, clientID, realm), err)
 	}
 	return nil
+}
+
+// ListEvents returns login and user events matching params.
+func (a *Admin) ListEvents(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error) {
+	types := params.Type
+	// gocloak's generic query serializer cannot encode the Type slice. Apply
+	// event-type filtering after the request instead.
+	params.Type = nil
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	events, err := a.client.GetEvents(ctx, tok, realm, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list events in realm %q", realm), err)
+	}
+	if len(types) > 0 {
+		filtered := events[:0]
+		for _, event := range events {
+			if containsString(types, gocloak.PString(event.Type)) {
+				filtered = append(filtered, event)
+			}
+		}
+		events = filtered
+	}
+	return events, nil
+}
+
+// ListAdminEvents returns administrative events matching params.
+func (a *Admin) ListAdminEvents(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
+	max := 0
+	if params.Max != nil {
+		max = int(*params.Max)
+	}
+	operationTypes := params.OperationTypes
+	resourceTypes := params.ResourceTypes
+	// gocloak v14's GetAdminEventsParams uses a numeric JSON tag for Max,
+	// and slice fields that its generic query serializer cannot encode. Apply
+	// these filters and the cap after the request while leaving scalar filters
+	// to Keycloak.
+	params.Max = nil
+	params.OperationTypes = nil
+	params.ResourceTypes = nil
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	events, err := a.client.GetAdminEvents(ctx, tok, realm, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list admin events in realm %q", realm), err)
+	}
+	if len(operationTypes) > 0 || len(resourceTypes) > 0 {
+		filtered := events[:0]
+		for _, event := range events {
+			if len(operationTypes) > 0 && !containsString(operationTypes, gocloak.PString(event.OperationType)) {
+				continue
+			}
+			if len(resourceTypes) > 0 && !containsString(resourceTypes, gocloak.PString(event.ResourceType)) {
+				continue
+			}
+			filtered = append(filtered, event)
+		}
+		events = filtered
+	}
+	if max > 0 && len(events) > max {
+		events = events[:max]
+	}
+	return events, nil
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 // Users.
