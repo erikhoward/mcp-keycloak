@@ -1,8 +1,12 @@
 package mcpserver
 
+import "strings"
+
 // defaultMax caps list tool results when the caller does not specify a
 // limit, keeping tool output small enough for LLM context windows.
 const defaultMax = 100
+
+const redactedSecret = "[REDACTED]"
 
 // deref returns the value pointed to by p, or the zero value when p is nil.
 func deref[T any](p *T) (v T) {
@@ -27,4 +31,12 @@ func resolveMax(max int) int {
 		return defaultMax
 	}
 	return max
+}
+
+func isSensitiveKey(key string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+	return strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "credential")
 }

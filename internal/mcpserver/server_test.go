@@ -457,6 +457,35 @@ func TestLoginEventListMapsFiltersAndDefaultsMax(t *testing.T) {
 	}
 }
 
+func TestAuditEventPayloadsRedactSensitiveValues(t *testing.T) {
+	admin := &fakeAdmin{
+		listAdminEvents: func(context.Context, string, gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error) {
+			return []*gocloak.AdminEventRepresentation{{
+				Representation: gocloak.StringP(`{"clientSecret":"secret-value","nested":{"password":"password-value"},"name":"safe"}`),
+			}}, nil
+		},
+		listEvents: func(context.Context, string, gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error) {
+			return []*gocloak.EventRepresentation{{
+				Type:    gocloak.StringP("LOGIN"),
+				Details: map[string]string{"access_token": "token-value", "username": "alice"},
+			}}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	adminResult := callTool(t, cs, "event_admin_list", map[string]any{"realm": "acme"})
+	adminText := resultText(t, adminResult)
+	if strings.Contains(adminText, "secret-value") || strings.Contains(adminText, "password-value") || !strings.Contains(adminText, redactedSecret) || !strings.Contains(adminText, "safe") {
+		t.Errorf("admin event output was not safely redacted: %s", adminText)
+	}
+
+	loginResult := callTool(t, cs, "event_login_list", map[string]any{"realm": "acme"})
+	loginText := resultText(t, loginResult)
+	if strings.Contains(loginText, "token-value") || !strings.Contains(loginText, redactedSecret) || !strings.Contains(loginText, "alice") {
+		t.Errorf("login event output was not safely redacted: %s", loginText)
+	}
+}
+
 func TestClientScopeCreateDefaultsProtocol(t *testing.T) {
 	var captured gocloak.ClientScope
 	admin := &fakeAdmin{createClientScope: func(_ context.Context, _ string, scope gocloak.ClientScope) (*gocloak.ClientScope, error) {

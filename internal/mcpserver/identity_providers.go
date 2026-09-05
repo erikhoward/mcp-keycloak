@@ -11,8 +11,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const redactedSecret = "[REDACTED]"
-
 type identityProviderRefInput struct {
 	Realm string `json:"realm" jsonschema:"realm name"`
 	Alias string `json:"alias" jsonschema:"identity provider alias"`
@@ -207,8 +205,7 @@ func redactIdentityProvider(provider *gocloak.IdentityProviderRepresentation) *g
 	copy := *provider
 	copy.Config = make(map[string]string, len(provider.Config))
 	for key, value := range provider.Config {
-		normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
-		if strings.Contains(normalized, "secret") || strings.Contains(normalized, "password") {
+		if isSensitiveKey(key) {
 			copy.Config[key] = redactedSecret
 		} else {
 			copy.Config[key] = value

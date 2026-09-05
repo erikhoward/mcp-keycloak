@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -51,7 +52,7 @@ func addEventTools(s *mcp.Server, admin AdminAPI) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, nonNil(events), nil
+		return nil, sanitizeAdminEvents(events), nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -73,8 +74,75 @@ func addEventTools(s *mcp.Server, admin AdminAPI) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, nonNil(events), nil
+		return nil, sanitizeLoginEvents(events), nil
 	})
+}
+
+func sanitizeAdminEvents(events []*gocloak.AdminEventRepresentation) []*gocloak.AdminEventRepresentation {
+	sanitized := make([]*gocloak.AdminEventRepresentation, len(events))
+	for i, event := range events {
+		if event == nil {
+			continue
+		}
+		copy := *event
+		if event.Representation != nil {
+			value := sanitizeJSONRepresentation(*event.Representation)
+			copy.Representation = &value
+		}
+		sanitized[i] = &copy
+	}
+	return nonNil(sanitized)
+}
+
+func sanitizeLoginEvents(events []*gocloak.EventRepresentation) []*gocloak.EventRepresentation {
+	sanitized := make([]*gocloak.EventRepresentation, len(events))
+	for i, event := range events {
+		if event == nil {
+			continue
+		}
+		copy := *event
+		copy.Details = make(map[string]string, len(event.Details))
+		for key, value := range event.Details {
+			if isSensitiveKey(key) {
+				copy.Details[key] = redactedSecret
+			} else {
+				copy.Details[key] = value
+			}
+		}
+		sanitized[i] = &copy
+	}
+	return nonNil(sanitized)
+}
+
+func sanitizeJSONRepresentation(raw string) string {
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return redactedSecret
+	}
+	value = sanitizeJSONValue(value)
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return redactedSecret
+	}
+	return string(encoded)
+}
+
+func sanitizeJSONValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if isSensitiveKey(key) {
+				value[key] = redactedSecret
+			} else {
+				value[key] = sanitizeJSONValue(child)
+			}
+		}
+	case []any:
+		for i, child := range value {
+			value[i] = sanitizeJSONValue(child)
+		}
+	}
+	return value
 }
 
 func optionalString(value string) *string {
