@@ -11,7 +11,9 @@ import (
 	"github.com/erikhoward/mcp-keycloak/internal/keycloak"
 )
 
-const serverVersion = "0.1.0"
+// serverVersion is the local development fallback. Release builds override it
+// with the tag version through the linker.
+var serverVersion = "0.1.0"
 
 // AdminAPI is the subset of Keycloak administration the tools rely on.
 // *keycloak.Admin implements it; tests use fakes.

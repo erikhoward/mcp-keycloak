@@ -177,6 +177,13 @@ func newTestClient(t *testing.T, admin AdminAPI) *mcp.ClientSession {
 	return cs
 }
 
+func TestServerAdvertisesVersion(t *testing.T) {
+	cs := newTestClient(t, &fakeAdmin{})
+	if got := cs.InitializeResult().ServerInfo.Version; got != serverVersion {
+		t.Errorf("server version = %q, want %q", got, serverVersion)
+	}
+}
+
 // callTool invokes a tool and fails the test unless it succeeds.
 func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()

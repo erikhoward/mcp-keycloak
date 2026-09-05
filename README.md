@@ -88,6 +88,10 @@ The release workflow builds these targets without GoReleaser:
 - macOS amd64 and arm64
 - Windows amd64
 
+Maintainers publish a release by pushing an annotated `vX.Y.Z` tag. The
+tag-triggered workflow injects that version into the MCP server metadata,
+builds the archives, and publishes checksums.
+
 ## Quickstart
 
 Build the binary in the repository:
