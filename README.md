@@ -40,19 +40,38 @@ Notes for agents calling the tools:
 | `KEYCLOAK_ADMIN_PASSWORD` | yes | Administrator account password |
 | `KEYCLOAK_ADMIN_REALM` | no | Realm holding the admin account (default `master`) |
 
-Variables can live in the process environment or a `.env` file next to the
-binary (see `.env.example`); existing environment variables always win.
+Variables can live in the process environment. When the server is started
+from a working directory containing `.env`, it loads that file as a local
+development convenience (see `.env.example`); existing environment variables
+always win. MCP clients should pass the variables explicitly in their server
+configuration.
 
 The server authenticates with full administrator rights. Point it at a
 dedicated admin account and, where possible, a non-production realm.
 
-## Running
+## Quickstart
+
+Build the binary in the repository:
 
 ```sh
-go build -o mcp-keycloak ./cmd/mcp-keycloak
+go build -o ./mcp-keycloak ./cmd/mcp-keycloak
 ```
 
-Register with any stdio MCP client, e.g.:
+Create a dedicated Keycloak admin account, then configure the binary with
+`KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, and
+optionally `KEYCLOAK_ADMIN_REALM`. The account needs the permissions required
+by the tools you intend to use. Keep the password out of committed files.
+
+Choose a client-specific setup:
+
+- [Claude Desktop, Claude Code, Cursor, and OpenCode setup](docs/client-setup.md)
+
+After connecting, ask the client to list the Keycloak realms. The first
+read-only request should call `realm_list`. If it fails, verify the absolute
+binary path, the Keycloak base URL, and the administrator credentials.
+
+Use the absolute path to `mcp-keycloak` in the client configuration. The
+underlying stdio configuration has this shape:
 
 ```json
 {
