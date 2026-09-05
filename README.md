@@ -222,6 +222,10 @@ with a Go-version complaint, install from source:
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 ```
 
+GitHub Actions are pinned to immutable commits. Maintainers review updates
+monthly and promptly for security advisories using the
+[action update process](docs/action-updates.md).
+
 ## Layout
 
 - `cmd/mcp-keycloak` — stdio entrypoint

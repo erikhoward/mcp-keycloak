@@ -47,6 +47,10 @@ Single test: `go test ./internal/mcpserver/ -run TestRealmCreate`. Integration t
 
 ## Gotchas
 
+- GitHub Actions must use full 40-character commit SHAs with exact release
+  versions in comments. Follow [the action update process](docs/action-updates.md)
+  when changing pins; update all occurrences across CI and release workflows.
+
 - golangci-lint must be built with a Go toolchain at least as new as the project's; prebuilt binaries that lag fail with a version error or panic in `go/types`. Fix: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0`.
 - The stdio transport must be `&mcp.StdioTransport{}`, not `&mcp.IOTransport{Reader: os.Stdin, Writer: os.Stdout}` — IOTransport closes its writer on disconnect, which closes `os.Stdout` and kills pending responses.
 - For manual stdio testing, drive the binary with an SDK client (e.g. `mcp.CommandTransport`); hand-rolled JSON-RPC with a stale `protocolVersion` is rejected.
