@@ -1,6 +1,6 @@
 module github.com/erikhoward/mcp-keycloak
 
-go 1.25.0
+go 1.25.13
 
 require (
 	github.com/Nerzal/gocloak/v14 v14.0.4
