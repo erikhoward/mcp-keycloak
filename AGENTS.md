@@ -7,7 +7,7 @@ Go MCP server exposing Keycloak administration over stdio. Single Go module, MIT
 ## Layout
 
 - `cmd/mcp-keycloak` — stdio entrypoint
-- `internal/config` — env config (`KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_ADMIN_REALM`)
+- `internal/config` — env config (`KEYCLOAK_URL`, username/password or service-account client credentials, `KEYCLOAK_ADMIN_REALM`)
 - `internal/keycloak` — gocloak wrapper with admin-token caching
 - `internal/mcpserver` — MCP server, tool definitions/handlers, all tests
 - `.github/workflows/ci.yml` — lint, unit, integration jobs

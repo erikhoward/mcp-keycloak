@@ -110,6 +110,38 @@ func TestNewAdminWithOptionsRejectsInvalidCABundle(t *testing.T) {
 	}
 }
 
+func TestAdminUsesServiceAccountCredentials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/realms/master/protocol/openid-connect/token" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		basicID, basicSecret, ok := r.BasicAuth()
+		if !ok || basicID != "service-client" || basicSecret != "service-secret" {
+			t.Errorf("basic auth = %q/%q/%v, want service-client/service-secret/true", basicID, basicSecret, ok)
+		}
+		if got := r.Form.Get("username"); got != "" {
+			t.Errorf("username = %q, want empty for client credentials", got)
+		}
+		writeJSON(t, w, map[string]any{"access_token": "service-token", "expires_in": 300})
+	}))
+	defer server.Close()
+
+	admin, err := NewAdminWithOptions(server.URL, "", "", "master", AdminOptions{
+		ServiceAccountClientID:     "service-client",
+		ServiceAccountClientSecret: "service-secret",
+	})
+	if err != nil {
+		t.Fatalf("NewAdminWithOptions: %v", err)
+	}
+	if token, err := admin.token(t.Context()); err != nil || token != "service-token" {
+		t.Fatalf("token = %q, err = %v", token, err)
+	}
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

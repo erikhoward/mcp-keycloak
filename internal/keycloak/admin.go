@@ -26,11 +26,13 @@ const refreshLead = 30 * time.Second
 // The zero value is not usable; construct one with NewAdmin.
 // All methods are safe for concurrent use.
 type Admin struct {
-	client   *gocloak.GoCloak
-	baseURL  string
-	username string
-	password string
-	realm    string
+	client       *gocloak.GoCloak
+	baseURL      string
+	username     string
+	password     string
+	clientID     string
+	clientSecret string
+	realm        string
 
 	mu           sync.Mutex
 	accessToken  string
@@ -39,8 +41,10 @@ type Admin struct {
 
 // AdminOptions configures the HTTP client used for Keycloak administration.
 type AdminOptions struct {
-	HTTPTimeout time.Duration
-	CACertFile  string
+	HTTPTimeout                time.Duration
+	CACertFile                 string
+	ServiceAccountClientID     string
+	ServiceAccountClientSecret string
 }
 
 const defaultHTTPTimeout = 30 * time.Second
@@ -66,6 +70,15 @@ func NewAdminWithOptions(baseURL, username, password, realm string, options Admi
 	if timeout < 0 {
 		return nil, fmt.Errorf("keycloak HTTP timeout must be positive")
 	}
+	if (options.ServiceAccountClientID == "") != (options.ServiceAccountClientSecret == "") {
+		return nil, fmt.Errorf("keycloak service-account client ID and secret must be configured together")
+	}
+	if username == "" && options.ServiceAccountClientID == "" {
+		return nil, fmt.Errorf("keycloak administrator credentials are required")
+	}
+	if options.ServiceAccountClientID == "" && password == "" {
+		return nil, fmt.Errorf("keycloak administrator password is required")
+	}
 	client := gocloak.NewClient(baseURL)
 	client.RestyClient().SetTimeout(timeout)
 	if options.CACertFile != "" {
@@ -74,11 +87,13 @@ func NewAdminWithOptions(baseURL, username, password, realm string, options Admi
 		}
 	}
 	return &Admin{
-		client:   client,
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		username: username,
-		password: password,
-		realm:    realm,
+		client:       client,
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		username:     username,
+		password:     password,
+		clientID:     options.ServiceAccountClientID,
+		clientSecret: options.ServiceAccountClientSecret,
+		realm:        realm,
 	}, nil
 }
 
@@ -109,7 +124,13 @@ func (a *Admin) token(ctx context.Context) (string, error) {
 	if a.accessToken != "" && time.Now().Add(refreshLead).Before(a.tokenExpires) {
 		return a.accessToken, nil
 	}
-	jwt, err := a.client.LoginAdmin(ctx, a.username, a.password, a.realm)
+	var jwt *gocloak.JWT
+	var err error
+	if a.clientID != "" {
+		jwt, err = a.client.LoginClient(ctx, a.clientID, a.clientSecret, a.realm)
+	} else {
+		jwt, err = a.client.LoginAdmin(ctx, a.username, a.password, a.realm)
+	}
 	if err != nil {
 		return "", wrapErr("admin login", err)
 	}

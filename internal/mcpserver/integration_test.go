@@ -418,6 +418,86 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 	})
 }
 
+func TestServiceAccountAuthentication(t *testing.T) {
+	ctx := t.Context()
+	gc := gocloak.NewClient(testBaseURL)
+	adminJWT, err := gc.LoginAdmin(ctx, "admin", "admin", "master")
+	if err != nil {
+		t.Fatalf("admin login: %v", err)
+	}
+
+	realm := fmt.Sprintf("service-it-%d", time.Now().UnixNano())
+	if _, err := gc.CreateRealm(ctx, adminJWT.AccessToken, gocloak.RealmRepresentation{Realm: gocloak.StringP(realm), Enabled: gocloak.BoolP(true)}); err != nil {
+		t.Fatalf("create service-account realm: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := gc.DeleteRealm(context.Background(), adminJWT.AccessToken, realm); err != nil {
+			t.Errorf("delete service-account realm: %v", err)
+		}
+	})
+	clientInternalID, clientSecret := createServiceAccountClient(t, gc, adminJWT.AccessToken, realm, "integration-service")
+	managementClients, err := gc.GetClients(ctx, adminJWT.AccessToken, realm, gocloak.GetClientsParams{ClientID: gocloak.StringP("realm-management")})
+	if err != nil || len(managementClients) != 1 {
+		t.Fatalf("find realm-management client: %v", err)
+	}
+	managementRole, err := gc.GetClientRole(ctx, adminJWT.AccessToken, realm, deref(managementClients[0].ID), "realm-admin")
+	if err != nil {
+		t.Fatalf("get realm-admin role: %v", err)
+	}
+	serviceAccount, err := gc.GetClientServiceAccount(ctx, adminJWT.AccessToken, realm, clientInternalID)
+	if err != nil {
+		t.Fatalf("get service account user: %v", err)
+	}
+	if err := gc.AddClientRoleToUser(ctx, adminJWT.AccessToken, realm, deref(managementClients[0].ID), deref(serviceAccount.ID), []gocloak.Role{*managementRole}); err != nil {
+		t.Fatalf("grant realm-admin role: %v", err)
+	}
+
+	serviceAdmin, err := keycloak.NewAdminWithOptions(testBaseURL, "", "", realm, keycloak.AdminOptions{
+		ServiceAccountClientID: "integration-service", ServiceAccountClientSecret: clientSecret,
+	})
+	if err != nil {
+		t.Fatalf("create service-account admin: %v", err)
+	}
+	users, err := serviceAdmin.ListUsers(ctx, realm, "", "", 100)
+	if err != nil {
+		t.Fatalf("service-account ListUsers: %v", err)
+	}
+	if users == nil {
+		t.Error("service account returned a nil user list")
+	}
+
+	_, restrictedSecret := createServiceAccountClient(t, gc, adminJWT.AccessToken, realm, "integration-restricted")
+	restrictedAdmin, err := keycloak.NewAdminWithOptions(testBaseURL, "", "", realm, keycloak.AdminOptions{
+		ServiceAccountClientID: "integration-restricted", ServiceAccountClientSecret: restrictedSecret,
+	})
+	if err != nil {
+		t.Fatalf("create restricted service-account admin: %v", err)
+	}
+	if _, err := restrictedAdmin.ListUsers(ctx, realm, "", "", 100); err == nil {
+		t.Error("restricted service account unexpectedly listed users without realm-management roles")
+	}
+}
+
+func createServiceAccountClient(t *testing.T, gc *gocloak.GoCloak, token, realm, clientID string) (string, string) {
+	t.Helper()
+	id, err := gc.CreateClient(t.Context(), token, realm, gocloak.Client{
+		ClientID:                  gocloak.StringP(clientID),
+		Enabled:                   gocloak.BoolP(true),
+		PublicClient:              gocloak.BoolP(false),
+		ServiceAccountsEnabled:    gocloak.BoolP(true),
+		StandardFlowEnabled:       gocloak.BoolP(false),
+		DirectAccessGrantsEnabled: gocloak.BoolP(false),
+	})
+	if err != nil {
+		t.Fatalf("create service-account client %q: %v", clientID, err)
+	}
+	secret, err := gc.GetClientSecret(t.Context(), token, realm, id)
+	if err != nil {
+		t.Fatalf("get service-account secret %q: %v", clientID, err)
+	}
+	return id, deref(secret.Value)
+}
+
 func createUser(t *testing.T, cs *mcp.ClientSession, realm string) string {
 	t.Helper()
 	res := callTool(t, cs, "user_create", map[string]any{

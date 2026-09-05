@@ -21,8 +21,14 @@ type Config struct {
 	// (env KEYCLOAK_ADMIN_USERNAME).
 	AdminUsername string
 	// AdminPassword is the administrator account password
-	// (env KEYCLOAK_ADMIN_PASSWORD).
+	// (env KEYCLOAK_ADMIN_PASSWORD; use with AdminUsername).
 	AdminPassword string
+	// AdminClientID is an optional confidential client ID for service-account
+	// authentication (env KEYCLOAK_ADMIN_CLIENT_ID).
+	AdminClientID string
+	// AdminClientSecret is the confidential client secret for service-account
+	// authentication (env KEYCLOAK_ADMIN_CLIENT_SECRET).
+	AdminClientSecret string
 	// AdminRealm is the realm the administrator logs into
 	// (env KEYCLOAK_ADMIN_REALM, default "master").
 	AdminRealm string
@@ -46,6 +52,8 @@ func Load() (Config, error) {
 		KeycloakURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("KEYCLOAK_URL")), "/"),
 		AdminUsername:      os.Getenv("KEYCLOAK_ADMIN_USERNAME"),
 		AdminPassword:      os.Getenv("KEYCLOAK_ADMIN_PASSWORD"),
+		AdminClientID:      os.Getenv("KEYCLOAK_ADMIN_CLIENT_ID"),
+		AdminClientSecret:  os.Getenv("KEYCLOAK_ADMIN_CLIENT_SECRET"),
 		AdminRealm:         os.Getenv("KEYCLOAK_ADMIN_REALM"),
 		KeycloakTimeout:    defaultKeycloakTimeout,
 		KeycloakCACertFile: strings.TrimSpace(os.Getenv("KEYCLOAK_CA_CERT_FILE")),
@@ -59,14 +67,22 @@ func Load() (Config, error) {
 	if cfg.KeycloakURL == "" {
 		missing = append(missing, "KEYCLOAK_URL")
 	}
-	if cfg.AdminUsername == "" {
-		missing = append(missing, "KEYCLOAK_ADMIN_USERNAME")
-	}
-	if cfg.AdminPassword == "" {
-		missing = append(missing, "KEYCLOAK_ADMIN_PASSWORD")
-	}
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required environment variables (set them in the environment or a .env file): %s", strings.Join(missing, ", "))
+	}
+	passwordAuth := cfg.AdminUsername != "" || cfg.AdminPassword != ""
+	serviceAuth := cfg.AdminClientID != "" || cfg.AdminClientSecret != ""
+	if passwordAuth && (cfg.AdminUsername == "" || cfg.AdminPassword == "") {
+		return Config{}, fmt.Errorf("set both KEYCLOAK_ADMIN_USERNAME and KEYCLOAK_ADMIN_PASSWORD, or use the service-account credentials")
+	}
+	if serviceAuth && (cfg.AdminClientID == "" || cfg.AdminClientSecret == "") {
+		return Config{}, fmt.Errorf("set both KEYCLOAK_ADMIN_CLIENT_ID and KEYCLOAK_ADMIN_CLIENT_SECRET, or use username/password credentials")
+	}
+	if passwordAuth && serviceAuth {
+		return Config{}, fmt.Errorf("configure exactly one authentication mode: username/password or service-account client credentials")
+	}
+	if !passwordAuth && !serviceAuth {
+		return Config{}, fmt.Errorf("configure either KEYCLOAK_ADMIN_USERNAME plus KEYCLOAK_ADMIN_PASSWORD, or KEYCLOAK_ADMIN_CLIENT_ID plus KEYCLOAK_ADMIN_CLIENT_SECRET")
 	}
 	if rawTimeout := strings.TrimSpace(os.Getenv("KEYCLOAK_TIMEOUT")); rawTimeout != "" {
 		timeout, err := time.ParseDuration(rawTimeout)

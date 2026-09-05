@@ -48,8 +48,10 @@ Notes for agents calling the tools:
 | Variable | Required | Description |
 | --- | --- | --- |
 | `KEYCLOAK_URL` | yes | Base URL of the Keycloak server |
-| `KEYCLOAK_ADMIN_USERNAME` | yes | Administrator account username |
-| `KEYCLOAK_ADMIN_PASSWORD` | yes | Administrator account password |
+| `KEYCLOAK_ADMIN_USERNAME` | conditional | Administrator account username |
+| `KEYCLOAK_ADMIN_PASSWORD` | conditional | Administrator account password |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | conditional | Confidential service-account client ID |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | conditional | Confidential service-account client secret |
 | `KEYCLOAK_ADMIN_REALM` | no | Realm holding the admin account (default `master`) |
 | `KEYCLOAK_TIMEOUT` | no | Per-request HTTP timeout (default `30s`) |
 | `KEYCLOAK_CA_CERT_FILE` | no | PEM CA bundle for private Keycloak TLS certificates |
@@ -57,6 +59,11 @@ Notes for agents calling the tools:
 
 `KEYCLOAK_URL` must use HTTPS for remote Keycloak servers. HTTP is accepted
 only for localhost or loopback development environments.
+
+Configure exactly one authentication mode: administrator username/password or
+a confidential client ID/secret with a service account. Service accounts are
+preferred for automation because their realm-management roles can be scoped
+explicitly; never grant more roles than the tools require.
 
 `KEYCLOAK_TIMEOUT` uses Go duration syntax such as `30s` or `2m`. The optional
 CA bundle extends the system trust store; certificate verification is never

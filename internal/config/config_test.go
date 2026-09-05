@@ -10,6 +10,8 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("KEYCLOAK_URL", "http://localhost:8080/")
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 	t.Setenv("KEYCLOAK_ADMIN_REALM", "")
 	t.Setenv("KEYCLOAK_TIMEOUT", "")
 	t.Setenv("KEYCLOAK_CA_CERT_FILE", "")
@@ -33,6 +35,8 @@ func TestLoadExplicitRealm(t *testing.T) {
 	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 	t.Setenv("KEYCLOAK_ADMIN_REALM", "custom")
 
 	cfg, err := Load()
@@ -48,15 +52,29 @@ func TestLoadMissingVariables(t *testing.T) {
 	t.Setenv("KEYCLOAK_URL", "")
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("Load: expected error for missing variables")
 	}
-	for _, want := range []string{"KEYCLOAK_URL", "KEYCLOAK_ADMIN_USERNAME", "KEYCLOAK_ADMIN_PASSWORD"} {
+	for _, want := range []string{"KEYCLOAK_URL"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
+	}
+}
+
+func TestLoadMissingAuthentication(t *testing.T) {
+	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load without authentication credentials: expected an error")
 	}
 }
 
@@ -82,6 +100,8 @@ func TestLoadKeycloakURLValidation(t *testing.T) {
 			t.Setenv("KEYCLOAK_URL", test.url)
 			t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 			t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+			t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+			t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 			t.Setenv("KEYCLOAK_ADMIN_REALM", "master")
 
 			_, err := Load()
@@ -99,6 +119,8 @@ func TestLoadTimeout(t *testing.T) {
 	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 	t.Setenv("KEYCLOAK_TIMEOUT", "2m")
 
 	cfg, err := Load()
@@ -121,6 +143,8 @@ func TestLoadReadOnly(t *testing.T) {
 	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
 	t.Setenv("KEYCLOAK_READ_ONLY", "true")
 
 	cfg, err := Load()
@@ -134,5 +158,39 @@ func TestLoadReadOnly(t *testing.T) {
 	t.Setenv("KEYCLOAK_READ_ONLY", "not-a-bool")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load with invalid KEYCLOAK_READ_ONLY: expected an error")
+	}
+}
+
+func TestLoadServiceAccountCredentials(t *testing.T) {
+	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "mcp-admin")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AdminClientID != "mcp-admin" || cfg.AdminClientSecret != "secret" {
+		t.Errorf("service credentials = %q/%q", cfg.AdminClientID, cfg.AdminClientSecret)
+	}
+}
+
+func TestLoadRejectsMixedOrPartialCredentials(t *testing.T) {
+	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_ID", "mcp-admin")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "service-secret")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load with both credential modes: expected an error")
+	}
+
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "")
+	t.Setenv("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load with partial service credentials: expected an error")
 	}
 }

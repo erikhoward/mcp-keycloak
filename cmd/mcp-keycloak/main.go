@@ -40,8 +40,10 @@ func run() error {
 		cfg.AdminPassword,
 		cfg.AdminRealm,
 		keycloak.AdminOptions{
-			HTTPTimeout: cfg.KeycloakTimeout,
-			CACertFile:  cfg.KeycloakCACertFile,
+			HTTPTimeout:                cfg.KeycloakTimeout,
+			CACertFile:                 cfg.KeycloakCACertFile,
+			ServiceAccountClientID:     cfg.AdminClientID,
+			ServiceAccountClientSecret: cfg.AdminClientSecret,
 		},
 	)
 	if err != nil {
