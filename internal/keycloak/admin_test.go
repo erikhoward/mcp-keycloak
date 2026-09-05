@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Nerzal/gocloak/v14"
 )
@@ -85,6 +87,26 @@ func TestListEventsHonorsSmallMax(t *testing.T) {
 	}
 	if len(events) != 3 || requestedMax != "3" {
 		t.Errorf("got %d events with max %q, want 3 events and max=3", len(events), requestedMax)
+	}
+}
+
+func TestNewAdminWithOptionsConfiguresTimeout(t *testing.T) {
+	admin, err := NewAdminWithOptions("https://sso.example.com", "admin", "password", "master", AdminOptions{HTTPTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("NewAdminWithOptions: %v", err)
+	}
+	if got := admin.client.RestyClient().GetClient().Timeout; got != 2*time.Second {
+		t.Errorf("HTTP timeout = %v, want 2s", got)
+	}
+}
+
+func TestNewAdminWithOptionsRejectsInvalidCABundle(t *testing.T) {
+	fileName := t.TempDir() + "/ca.pem"
+	if err := os.WriteFile(fileName, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminWithOptions("https://sso.example.com", "admin", "password", "master", AdminOptions{CACertFile: fileName}); err == nil {
+		t.Fatal("NewAdminWithOptions: expected invalid CA bundle error")
 	}
 }
 

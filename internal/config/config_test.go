@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -10,6 +11,8 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
 	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
 	t.Setenv("KEYCLOAK_ADMIN_REALM", "")
+	t.Setenv("KEYCLOAK_TIMEOUT", "")
+	t.Setenv("KEYCLOAK_CA_CERT_FILE", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -20,6 +23,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.AdminRealm != "master" {
 		t.Errorf("AdminRealm = %q, want default %q", cfg.AdminRealm, "master")
+	}
+	if cfg.KeycloakTimeout != 30*time.Second {
+		t.Errorf("KeycloakTimeout = %v, want 30s", cfg.KeycloakTimeout)
 	}
 }
 
@@ -86,5 +92,27 @@ func TestLoadKeycloakURLValidation(t *testing.T) {
 				t.Fatalf("Load(%q): unexpected error: %v", test.url, err)
 			}
 		})
+	}
+}
+
+func TestLoadTimeout(t *testing.T) {
+	t.Setenv("KEYCLOAK_URL", "https://sso.example.com")
+	t.Setenv("KEYCLOAK_ADMIN_USERNAME", "admin")
+	t.Setenv("KEYCLOAK_ADMIN_PASSWORD", "secret")
+	t.Setenv("KEYCLOAK_TIMEOUT", "2m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.KeycloakTimeout != 2*time.Minute {
+		t.Errorf("KeycloakTimeout = %v, want 2m", cfg.KeycloakTimeout)
+	}
+
+	for _, invalid := range []string{"0s", "-1s", "not-a-duration"} {
+		t.Setenv("KEYCLOAK_TIMEOUT", invalid)
+		if _, err := Load(); err == nil {
+			t.Errorf("Load with KEYCLOAK_TIMEOUT=%q: expected an error", invalid)
+		}
 	}
 }

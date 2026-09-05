@@ -5,9 +5,12 @@ package keycloak
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,17 +37,68 @@ type Admin struct {
 	tokenExpires time.Time
 }
 
+// AdminOptions configures the HTTP client used for Keycloak administration.
+type AdminOptions struct {
+	HTTPTimeout time.Duration
+	CACertFile  string
+}
+
+const defaultHTTPTimeout = 30 * time.Second
+
 // NewAdmin returns an Admin that authenticates as the given administrator
 // against the Keycloak server at baseURL. realm is the realm the account
 // lives in, usually "master".
 func NewAdmin(baseURL, username, password, realm string) *Admin {
+	admin, err := NewAdminWithOptions(baseURL, username, password, realm, AdminOptions{})
+	if err != nil {
+		panic(err)
+	}
+	return admin
+}
+
+// NewAdminWithOptions returns an Admin with bounded HTTP requests and an
+// optional additional trusted CA bundle. It never disables TLS verification.
+func NewAdminWithOptions(baseURL, username, password, realm string, options AdminOptions) (*Admin, error) {
+	timeout := options.HTTPTimeout
+	if timeout == 0 {
+		timeout = defaultHTTPTimeout
+	}
+	if timeout < 0 {
+		return nil, fmt.Errorf("keycloak HTTP timeout must be positive")
+	}
+	client := gocloak.NewClient(baseURL)
+	client.RestyClient().SetTimeout(timeout)
+	if options.CACertFile != "" {
+		if err := addTrustedCA(client, options.CACertFile); err != nil {
+			return nil, err
+		}
+	}
 	return &Admin{
-		client:   gocloak.NewClient(baseURL),
+		client:   client,
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		username: username,
 		password: password,
 		realm:    realm,
+	}, nil
+}
+
+func addTrustedCA(client *gocloak.GoCloak, fileName string) error {
+	pemBytes, err := os.ReadFile(fileName)
+	if err != nil {
+		return fmt.Errorf("read Keycloak CA certificate %q: %w", fileName, err)
 	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return fmt.Errorf("read Keycloak CA certificate %q: no PEM certificates found", fileName)
+	}
+	client.RestyClient().SetTLSClientConfig(&tls.Config{
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
+	})
+	return nil
 }
 
 // token returns a cached admin access token, logging in again when the

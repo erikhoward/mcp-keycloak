@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 // Config holds the settings needed to administer a Keycloak server.
@@ -24,17 +25,27 @@ type Config struct {
 	// AdminRealm is the realm the administrator logs into
 	// (env KEYCLOAK_ADMIN_REALM, default "master").
 	AdminRealm string
+	// KeycloakTimeout bounds individual HTTP requests (env KEYCLOAK_TIMEOUT,
+	// default 30s).
+	KeycloakTimeout time.Duration
+	// KeycloakCACertFile optionally points to a PEM-encoded trusted CA bundle
+	// (env KEYCLOAK_CA_CERT_FILE).
+	KeycloakCACertFile string
 }
+
+const defaultKeycloakTimeout = 30 * time.Second
 
 // Load reads configuration from environment variables, applying defaults and
 // validating required values. A .env file can supply the variables; it is
 // loaded by the main command before Load is called.
 func Load() (Config, error) {
 	cfg := Config{
-		KeycloakURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("KEYCLOAK_URL")), "/"),
-		AdminUsername: os.Getenv("KEYCLOAK_ADMIN_USERNAME"),
-		AdminPassword: os.Getenv("KEYCLOAK_ADMIN_PASSWORD"),
-		AdminRealm:    os.Getenv("KEYCLOAK_ADMIN_REALM"),
+		KeycloakURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("KEYCLOAK_URL")), "/"),
+		AdminUsername:      os.Getenv("KEYCLOAK_ADMIN_USERNAME"),
+		AdminPassword:      os.Getenv("KEYCLOAK_ADMIN_PASSWORD"),
+		AdminRealm:         os.Getenv("KEYCLOAK_ADMIN_REALM"),
+		KeycloakTimeout:    defaultKeycloakTimeout,
+		KeycloakCACertFile: strings.TrimSpace(os.Getenv("KEYCLOAK_CA_CERT_FILE")),
 	}
 	if cfg.AdminRealm == "" {
 		cfg.AdminRealm = "master"
@@ -52,6 +63,13 @@ func Load() (Config, error) {
 	}
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("missing required environment variables (set them in the environment or a .env file): %s", strings.Join(missing, ", "))
+	}
+	if rawTimeout := strings.TrimSpace(os.Getenv("KEYCLOAK_TIMEOUT")); rawTimeout != "" {
+		timeout, err := time.ParseDuration(rawTimeout)
+		if err != nil || timeout <= 0 {
+			return Config{}, fmt.Errorf("invalid KEYCLOAK_TIMEOUT %q: use a positive duration such as 30s or 2m", rawTimeout)
+		}
+		cfg.KeycloakTimeout = timeout
 	}
 	if err := validateKeycloakURL(cfg.KeycloakURL); err != nil {
 		return Config{}, err

@@ -34,7 +34,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	admin := keycloak.NewAdmin(cfg.KeycloakURL, cfg.AdminUsername, cfg.AdminPassword, cfg.AdminRealm)
+	admin, err := keycloak.NewAdminWithOptions(
+		cfg.KeycloakURL,
+		cfg.AdminUsername,
+		cfg.AdminPassword,
+		cfg.AdminRealm,
+		keycloak.AdminOptions{
+			HTTPTimeout: cfg.KeycloakTimeout,
+			CACertFile:  cfg.KeycloakCACertFile,
+		},
+	)
+	if err != nil {
+		return err
+	}
 	srv := mcpserver.New(admin)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

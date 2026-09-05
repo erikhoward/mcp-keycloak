@@ -51,9 +51,15 @@ Notes for agents calling the tools:
 | `KEYCLOAK_ADMIN_USERNAME` | yes | Administrator account username |
 | `KEYCLOAK_ADMIN_PASSWORD` | yes | Administrator account password |
 | `KEYCLOAK_ADMIN_REALM` | no | Realm holding the admin account (default `master`) |
+| `KEYCLOAK_TIMEOUT` | no | Per-request HTTP timeout (default `30s`) |
+| `KEYCLOAK_CA_CERT_FILE` | no | PEM CA bundle for private Keycloak TLS certificates |
 
 `KEYCLOAK_URL` must use HTTPS for remote Keycloak servers. HTTP is accepted
 only for localhost or loopback development environments.
+
+`KEYCLOAK_TIMEOUT` uses Go duration syntax such as `30s` or `2m`. The optional
+CA bundle extends the system trust store; certificate verification is never
+disabled.
 
 Variables can live in the process environment. When the server is started
 from a working directory containing `.env`, it loads that file as a local
