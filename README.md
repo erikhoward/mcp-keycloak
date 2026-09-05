@@ -142,14 +142,27 @@ underlying stdio configuration has this shape:
 
 ## Development
 
+Install the same pinned vulnerability scanner used by CI, and ensure
+`$(go env GOPATH)/bin` (or your custom `GOBIN`) is on `PATH`:
+
+```sh
+go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+```
+
 ```sh
 gofmt -l .                                        # format check
 golangci-lint run                                 # lint (config: .golangci.yml)
 go vet ./...
 go test ./...                                     # unit tests (no Docker needed)
 go test -tags integration ./...                   # integration tests (needs Docker)
+govulncheck ./...                                 # known vulnerabilities (needs network)
 go test ./internal/mcpserver/ -run TestRealmCreate   # single test
 ```
+
+CI runs the vulnerability scan in the existing `test` job on pull requests
+and pushes to `main`. Findings and scanner errors fail the check rather than
+being reported as advisory. Require the `test` check in branch protection to
+block merging failing pull requests.
 
 Integration tests start a disposable Keycloak 26.7 container via
 testcontainers (image pinned in `internal/mcpserver/integration_test.go`)

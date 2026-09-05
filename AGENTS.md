@@ -29,12 +29,19 @@ Tools live in `internal/mcpserver/<domain>.go`: an input struct with `jsonschema
 Run in order:
 
 ```
+go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 gofmt -l .
 golangci-lint run
 go vet ./...
 go test ./...                     # unit; no Docker required
 go test -tags integration ./...   # integration; needs Docker, pulls Keycloak 26.7.3
+govulncheck ./...                 # known vulnerabilities; requires network access
 ```
+
+Ensure `$(go env GOPATH)/bin` (or your custom `GOBIN`) is on `PATH`.
+CI runs `govulncheck ./...` in the existing `test` job. Findings and scanner
+errors fail that check; vulnerability scanning is not advisory. Require the
+`test` check in branch protection to block merging failing pull requests.
 
 Single test: `go test ./internal/mcpserver/ -run TestRealmCreate`. Integration tests are guarded by a `//go:build integration` tag; without it they are excluded entirely (they do not silently skip when Docker is missing — they fail).
 

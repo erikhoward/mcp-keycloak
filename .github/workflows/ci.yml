@@ -28,6 +28,11 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+      # Findings fail the existing test check; do not make this advisory.
+      - name: Check for known vulnerabilities
+        run: govulncheck ./...
 
   integration:
     runs-on: ubuntu-latest
