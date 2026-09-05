@@ -99,9 +99,9 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 	})
 
 	t.Run("client secret", func(t *testing.T) {
-		res := callTool(t, cs, "client_secret_get", map[string]any{"realm": realm, "clientId": "web-app"})
-		secret := decodeResult[gocloak.CredentialRepresentation](t, res)
-		if deref(secret.Value) == "" {
+		res := callTool(t, cs, "client_secret_get", map[string]any{"realm": realm, "clientId": "web-app", "includeSecret": true})
+		secret := decodeStructuredResult[clientSecretOutput](t, res)
+		if secret.Secret == "" || !secret.SecretAvailable {
 			t.Error("expected a non-empty client secret")
 		}
 	})

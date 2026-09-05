@@ -19,6 +19,19 @@ type clientRefInput struct {
 	ClientID string `json:"clientId" jsonschema:"client identifier (not the internal UUID), e.g. \"my-app\""`
 }
 
+type clientSecretGetInput struct {
+	Realm         string `json:"realm" jsonschema:"realm name"`
+	ClientID      string `json:"clientId" jsonschema:"client identifier (not the internal UUID)"`
+	IncludeSecret bool   `json:"includeSecret,omitempty" jsonschema:"explicitly include the secret in structured output; default false because MCP transcripts may be retained"`
+}
+
+type clientSecretOutput struct {
+	Realm           string `json:"realm"`
+	ClientID        string `json:"clientId"`
+	SecretAvailable bool   `json:"secretAvailable"`
+	Secret          string `json:"secret,omitempty"`
+}
+
 type createClientInput struct {
 	Realm                     string   `json:"realm" jsonschema:"realm to create the client in"`
 	ClientID                  string   `json:"clientId" jsonschema:"unique client identifier used in OIDC requests, e.g. \"my-app\""`
@@ -140,18 +153,30 @@ func addClientTools(s *mcp.Server, admin AdminAPI) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_secret_get",
 		Title:       "Get client secret",
-		Description: "Get the current secret of a confidential client, by client identifier. The secret is used by backend services to authenticate against Keycloak; treat it as sensitive.",
+		Description: "Inspect whether a confidential client has a secret. The secret is omitted by default; set includeSecret=true only when explicitly needed because MCP clients may retain tool transcripts.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in clientRefInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in clientSecretGetInput) (*mcp.CallToolResult, any, error) {
 		client, err := resolveClient(ctx, admin, in.Realm, in.ClientID)
 		if err != nil {
 			return nil, nil, err
 		}
-		secret, err := admin.GetClientSecret(ctx, in.Realm, deref(client.ID))
-		if err != nil {
-			return nil, nil, err
+		secretAvailable := client.PublicClient == nil || !*client.PublicClient
+		output := clientSecretOutput{
+			Realm:           in.Realm,
+			ClientID:        in.ClientID,
+			SecretAvailable: secretAvailable,
 		}
-		return nil, secret, nil
+		message := "Client secret was not returned. Set includeSecret=true only when the secret is explicitly needed and can be handled securely."
+		if in.IncludeSecret {
+			secret, err := admin.GetClientSecret(ctx, in.Realm, deref(client.ID))
+			if err != nil {
+				return nil, nil, err
+			}
+			output.Secret = deref(secret.Value)
+			output.SecretAvailable = output.Secret != ""
+			message = "Client secret retrieved in structured output; treat it as sensitive and do not repeat or store it."
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: message}}}, output, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

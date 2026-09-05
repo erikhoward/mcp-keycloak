@@ -23,6 +23,7 @@ type fakeAdmin struct {
 	deleteRealm              func(ctx context.Context, realm string) error
 	listClients              func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
 	updateClient             func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
+	getClientSecret          func(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
 	listClientScopes         func(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
 	getClientScope           func(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
 	createClientScope        func(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error)
@@ -64,6 +65,10 @@ func (f fakeAdmin) ListClients(ctx context.Context, realm, clientID string, max 
 
 func (f fakeAdmin) UpdateClient(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error) {
 	return f.updateClient(ctx, realm, rep)
+}
+
+func (f fakeAdmin) GetClientSecret(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error) {
+	return f.getClientSecret(ctx, realm, id)
 }
 
 func (f fakeAdmin) ListClientScopes(ctx context.Context, realm string) ([]*gocloak.ClientScope, error) {
@@ -207,6 +212,19 @@ func decodeResult[T any](t *testing.T, res *mcp.CallToolResult) T {
 	return v
 }
 
+func decodeStructuredResult[T any](t *testing.T, res *mcp.CallToolResult) T {
+	t.Helper()
+	var v T
+	encoded, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatalf("encoding structured result: %v", err)
+	}
+	if err := json.Unmarshal(encoded, &v); err != nil {
+		t.Fatalf("decoding structured result into %T: %v", v, err)
+	}
+	return v
+}
+
 func TestRealmList(t *testing.T) {
 	admin := &fakeAdmin{listRealms: func(context.Context) ([]*gocloak.RealmRepresentation, error) {
 		return []*gocloak.RealmRepresentation{
@@ -310,7 +328,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 
 	for _, name := range []string{
 		"realm_get", "realm_delete",
-		"client_get", "client_delete", "client_update",
+		"client_get", "client_delete", "client_update", "client_secret_get",
 		"client_scope_get", "client_scope_delete",
 		"client_scope_assign", "client_scope_unassign",
 		"event_admin_list", "event_login_list",
@@ -575,6 +593,55 @@ func TestClientScopeAssignmentUsesInternalIDs(t *testing.T) {
 	unassigned := decodeResult[map[string]any](t, res)
 	if unassigned["unassigned"] != true || unassigned["optional"] != true {
 		t.Errorf("unassignment result = %v, want unassigned=true and optional=true", unassigned)
+	}
+}
+
+func TestClientSecretGetOmitsSecretByDefault(t *testing.T) {
+	called := false
+	admin := &fakeAdmin{
+		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("app"), PublicClient: gocloak.BoolP(false)}}, nil
+		},
+		getClientSecret: func(context.Context, string, string) (*gocloak.CredentialRepresentation, error) {
+			called = true
+			return &gocloak.CredentialRepresentation{Value: gocloak.StringP("secret-value")}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_secret_get", map[string]any{"realm": "acme", "clientId": "app"})
+	if called {
+		t.Error("secret lookup should not run when includeSecret is false")
+	}
+	if strings.Contains(resultText(t, res), "secret-value") {
+		t.Error("default client_secret_get output contains a secret")
+	}
+	out := decodeStructuredResult[clientSecretOutput](t, res)
+	if !out.SecretAvailable || out.Secret != "" {
+		t.Errorf("safe output = %+v, want available=true and empty secret", out)
+	}
+}
+
+func TestClientSecretGetExplicitlyIncludesSecretWithoutTextDuplication(t *testing.T) {
+	admin := &fakeAdmin{
+		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("app"), PublicClient: gocloak.BoolP(false)}}, nil
+		},
+		getClientSecret: func(context.Context, string, string) (*gocloak.CredentialRepresentation, error) {
+			return &gocloak.CredentialRepresentation{Value: gocloak.StringP("secret-value")}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "client_secret_get", map[string]any{
+		"realm": "acme", "clientId": "app", "includeSecret": true,
+	})
+	if strings.Contains(resultText(t, res), "secret-value") {
+		t.Error("human-readable client_secret_get content contains the secret")
+	}
+	out := decodeStructuredResult[clientSecretOutput](t, res)
+	if out.Secret != "secret-value" || !out.SecretAvailable {
+		t.Errorf("explicit output = %+v, want secret-value and available=true", out)
 	}
 }
 

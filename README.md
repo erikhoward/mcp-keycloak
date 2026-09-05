@@ -30,6 +30,9 @@ Notes for agents calling the tools:
   the user must change it at first login.
 - Created clients are confidential (with an auto-generated secret, fetchable
   via `client_secret_get`) unless `public: true` is passed.
+- `client_secret_get` omits the secret by default. Set `includeSecret: true`
+  only when explicitly needed; the value is returned in structured output and
+  may be retained by the MCP client's transcript or model context.
 - List tools return at most 100 results unless a smaller `max` is given.
 - `event_admin_list` requires Admin Events enabled in the realm; `event_login_list`
   requires user events enabled. Event type and admin operation/resource filters
