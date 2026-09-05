@@ -1,0 +1,236 @@
+//go:build integration
+
+package mcpserver
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Nerzal/gocloak/v13"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	keycloaktc "github.com/stillya/testcontainers-keycloak"
+
+	"github.com/erikhoward/mcp-keycloak/internal/keycloak"
+)
+
+// keycloakImage is pinned so integration results are reproducible; bump it
+// deliberately when testing against newer Keycloak releases.
+const keycloakImage = "quay.io/keycloak/keycloak:26.7.3"
+
+var testAdmin *keycloak.Admin
+
+// TestMain starts a disposable Keycloak container for the whole integration
+// run. It requires a working Docker daemon; without the integration build
+// tag these tests are skipped entirely.
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+	kc, err := keycloaktc.Run(ctx, keycloakImage,
+		keycloaktc.WithAdminUsername("admin"),
+		keycloaktc.WithAdminPassword("admin"),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-keycloak integration: starting Keycloak container: %v\n", err)
+		os.Exit(1)
+	}
+	baseURL, err := kc.GetAuthServerURL(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-keycloak integration: getting Keycloak URL: %v\n", err)
+		_ = kc.Terminate(ctx)
+		os.Exit(1)
+	}
+	testAdmin = keycloak.NewAdmin(baseURL, "admin", "admin", "master")
+
+	code := m.Run()
+	if err := kc.Terminate(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp-keycloak integration: terminating container: %v\n", err)
+	}
+	os.Exit(code)
+}
+
+// TestKeycloakToolsIntegration exercises the tool surface end to end against
+// a real Keycloak: the MCP protocol layer (via an in-memory transport) plus
+// gocloak against the container.
+func TestKeycloakToolsIntegration(t *testing.T) {
+	cs := newTestClient(t, testAdmin)
+	realm := fmt.Sprintf("it-%d", time.Now().UnixNano())
+
+	res := callTool(t, cs, "realm_create", map[string]any{"realm": realm, "displayName": "Integration"})
+	created := decodeResult[gocloak.RealmRepresentation](t, res)
+	if deref(created.Realm) != realm {
+		t.Fatalf("realm_create returned realm %q, want %q", deref(created.Realm), realm)
+	}
+
+	userID := createUser(t, cs, realm)
+	createClient(t, cs, realm)
+	groupID := createGroup(t, cs, realm)
+	_ = createRealmRole(t, cs, realm)
+
+	t.Run("realm settings round trip", func(t *testing.T) {
+		res := callTool(t, cs, "realm_get", map[string]any{"realm": realm})
+		got := decodeResult[gocloak.RealmRepresentation](t, res)
+		if deref(got.Realm) != realm {
+			t.Errorf("got realm %q, want %q", deref(got.Realm), realm)
+		}
+
+		res = callTool(t, cs, "realm_update", map[string]any{
+			"realm": realm, "displayName": "Integration v2",
+		})
+		got = decodeResult[gocloak.RealmRepresentation](t, res)
+		if deref(got.DisplayName) != "Integration v2" {
+			t.Errorf("displayName = %q, want %q", deref(got.DisplayName), "Integration v2")
+		}
+	})
+
+	t.Run("client secret", func(t *testing.T) {
+		res := callTool(t, cs, "client_secret_get", map[string]any{"realm": realm, "clientId": "web-app"})
+		secret := decodeResult[gocloak.CredentialRepresentation](t, res)
+		if deref(secret.Value) == "" {
+			t.Error("expected a non-empty client secret")
+		}
+	})
+
+	t.Run("user list and get", func(t *testing.T) {
+		res := callTool(t, cs, "user_list", map[string]any{"realm": realm, "username": "alice"})
+		users := decodeResult[[]gocloak.User](t, res)
+		if len(users) != 1 || deref(users[0].ID) != userID {
+			t.Fatalf("user_list returned %v, want exactly alice (%s)", users, userID)
+		}
+
+		res = callTool(t, cs, "user_get", map[string]any{"realm": realm, "userId": userID})
+		user := decodeResult[gocloak.User](t, res)
+		if deref(user.Email) != "alice@example.com" {
+			t.Errorf("email = %q, want %q", deref(user.Email), "alice@example.com")
+		}
+	})
+
+	t.Run("user update", func(t *testing.T) {
+		res := callTool(t, cs, "user_update", map[string]any{
+			"realm": realm, "userId": userID, "enabled": false, "firstName": "Alicia",
+		})
+		user := decodeResult[gocloak.User](t, res)
+		if user.Enabled == nil || *user.Enabled {
+			t.Error("user should be disabled after user_update")
+		}
+		if deref(user.FirstName) != "Alicia" {
+			t.Errorf("firstName = %q, want %q", deref(user.FirstName), "Alicia")
+		}
+	})
+
+	t.Run("group list", func(t *testing.T) {
+		res := callTool(t, cs, "group_list", map[string]any{"realm": realm, "search": "engineers"})
+		groups := decodeResult[[]gocloak.Group](t, res)
+		if len(groups) != 1 || deref(groups[0].ID) != groupID {
+			t.Fatalf("group_list returned %v, want the created engineers group", groups)
+		}
+	})
+
+	t.Run("realm role list", func(t *testing.T) {
+		res := callTool(t, cs, "realm_role_list", map[string]any{"realm": realm})
+		roles := decodeResult[[]gocloak.Role](t, res)
+		found := false
+		for _, r := range roles {
+			if deref(r.Name) == "auditor" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("realm_role_list does not include the created auditor role")
+		}
+	})
+
+	t.Run("missing realm yields tool error", func(t *testing.T) {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+			Name:      "realm_get",
+			Arguments: map[string]any{"realm": "no-such-realm"},
+		})
+		if err != nil {
+			t.Fatalf("CallTool protocol error: %v", err)
+		}
+		if !res.IsError {
+			t.Fatal("expected a tool error for a missing realm")
+		}
+	})
+
+	t.Run("cleanup", func(t *testing.T) {
+		callTool(t, cs, "user_delete", map[string]any{"realm": realm, "userId": userID})
+		callTool(t, cs, "client_delete", map[string]any{"realm": realm, "clientId": "web-app"})
+		callTool(t, cs, "group_delete", map[string]any{"realm": realm, "groupId": groupID})
+		callTool(t, cs, "realm_role_delete", map[string]any{"realm": realm, "name": "auditor"})
+		callTool(t, cs, "realm_delete", map[string]any{"realm": realm})
+
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+			Name:      "realm_get",
+			Arguments: map[string]any{"realm": realm},
+		})
+		if err != nil {
+			t.Fatalf("CallTool protocol error: %v", err)
+		}
+		if !res.IsError {
+			t.Fatal("realm_get should fail after realm_delete")
+		}
+		if text := resultText(t, res); !strings.Contains(text, "404") {
+			t.Errorf("error text %q does not mention the 404 status", text)
+		}
+	})
+}
+
+func createUser(t *testing.T, cs *mcp.ClientSession, realm string) string {
+	t.Helper()
+	res := callTool(t, cs, "user_create", map[string]any{
+		"realm":           realm,
+		"username":        "alice",
+		"email":           "alice@example.com",
+		"firstName":       "Alice",
+		"lastName":        "Doe",
+		"initialPassword": "correct horse battery staple",
+	})
+	user := decodeResult[gocloak.User](t, res)
+	id := deref(user.ID)
+	if id == "" {
+		t.Fatal("user_create returned no ID")
+	}
+	return id
+}
+
+func createClient(t *testing.T, cs *mcp.ClientSession, realm string) string {
+	t.Helper()
+	res := callTool(t, cs, "client_create", map[string]any{
+		"realm":        realm,
+		"clientId":     "web-app",
+		"name":         "Web App",
+		"redirectURIs": []string{"http://localhost:8080/callback"},
+	})
+	client := decodeResult[gocloak.Client](t, res)
+	id := deref(client.ID)
+	if id == "" {
+		t.Fatal("client_create returned no ID")
+	}
+	if client.PublicClient == nil || *client.PublicClient {
+		t.Error("client should be confidential (public=false) by default")
+	}
+	return id
+}
+
+func createGroup(t *testing.T, cs *mcp.ClientSession, realm string) string {
+	t.Helper()
+	res := callTool(t, cs, "group_create", map[string]any{"realm": realm, "name": "engineers"})
+	group := decodeResult[gocloak.Group](t, res)
+	id := deref(group.ID)
+	if id == "" {
+		t.Fatal("group_create returned no ID")
+	}
+	return id
+}
+
+func createRealmRole(t *testing.T, cs *mcp.ClientSession, realm string) string {
+	t.Helper()
+	res := callTool(t, cs, "realm_role_create", map[string]any{
+		"realm": realm, "name": "auditor", "description": "Read-only auditor access",
+	})
+	role := decodeResult[gocloak.Role](t, res)
+	return deref(role.Name)
+}
