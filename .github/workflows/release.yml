@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -eu
+
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p package dist
+          binary="mcp-keycloak"
+          if [ "$GOOS" = "windows" ]; then
+            binary="${binary}.exe"
+          fi
+
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "package/${binary}" \
+            ./cmd/mcp-keycloak
+
+          cp LICENSE README.md package/
+          archive="mcp-keycloak_${version}_${GOOS}_${GOARCH}"
+          if [ "$GOOS" = "windows" ]; then
+            zip -q -j "dist/${archive}.zip" \
+              "package/${binary}" package/LICENSE package/README.md
+          else
+            tar -czf "dist/${archive}.tar.gz" \
+              -C package "${binary}" LICENSE README.md
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp-keycloak-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          sha256sum dist/mcp-keycloak_*.tar.gz dist/mcp-keycloak_*.zip > dist/checksums.txt
+          gh release create "$GITHUB_REF_NAME" \
+            dist/mcp-keycloak_*.tar.gz \
+            dist/mcp-keycloak_*.zip \
+            dist/checksums.txt \
+            --title "mcp-keycloak ${GITHUB_REF_NAME}" \
+            --generate-notes

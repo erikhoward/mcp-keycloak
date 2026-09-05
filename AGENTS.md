@@ -11,6 +11,7 @@ Go MCP server exposing Keycloak administration over stdio. Single Go module, MIT
 - `internal/keycloak` — gocloak wrapper with admin-token caching
 - `internal/mcpserver` — MCP server, tool definitions/handlers, all tests
 - `.github/workflows/ci.yml` — lint, unit, integration jobs
+- `.github/workflows/release.yml` — tag-triggered cross-platform release archives
 
 ## Binding stack decisions (do not substitute alternatives)
 
