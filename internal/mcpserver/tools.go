@@ -1,10 +1,22 @@
 package mcpserver
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Nerzal/gocloak/v14"
+)
 
 // defaultMax caps list tool results when the caller does not specify a
 // limit, keeping tool output small enough for LLM context windows.
 const defaultMax = 100
+
+// realmRoleMappingsOutput is the shared result shape of the role-mapping
+// read tools: the directly assigned roles and the effective set after
+// composite expansion.
+type realmRoleMappingsOutput struct {
+	Direct    []*gocloak.Role `json:"direct"`
+	Effective []*gocloak.Role `json:"effective"`
+}
 
 const redactedSecret = "[REDACTED]"
 

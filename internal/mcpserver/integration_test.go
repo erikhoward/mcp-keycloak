@@ -378,6 +378,57 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 			t.Error("user is not a member of the engineers group after user_add_to_group")
 		}
 
+		// Membership reads through the tool surface, including composite
+		// role expansion.
+		res := callTool(t, cs, "user_groups_list", map[string]any{"realm": realm, "userId": userID})
+		userGroups := decodeResult[[]*gocloak.Group](t, res)
+		if !hasGroupID(userGroups, groupID) {
+			t.Error("user_groups_list did not return the engineers group")
+		}
+
+		res = callTool(t, cs, "group_members_list", map[string]any{"realm": realm, "groupId": groupID})
+		members := decodeResult[[]*gocloak.User](t, res)
+		if !hasUserID(members, userID) {
+			t.Error("group_members_list did not return alice")
+		}
+
+		parent := callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "reporter-parent"})
+		parentRole := decodeResult[gocloak.Role](t, parent)
+		child := callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "reporter-child"})
+		childRole := decodeResult[gocloak.Role](t, child)
+		// Keycloak's role-mapping endpoints look up roles by name and then
+		// verify the ID, so the request body needs the full representation.
+		if err := gc.AddRealmRoleComposite(t.Context(), tok, realm, "reporter-parent", []gocloak.Role{childRole}); err != nil {
+			t.Fatalf("make reporter-parent composite: %v", err)
+		}
+		callTool(t, cs, "user_add_realm_role", map[string]any{
+			"realm": realm, "userId": userID, "roles": []string{"reporter-parent"},
+		})
+		if err := gc.AddRealmRoleToGroup(t.Context(), tok, realm, groupID, []gocloak.Role{parentRole}); err != nil {
+			t.Fatalf("assign reporter-parent to the group: %v", err)
+		}
+
+		res = callTool(t, cs, "user_roles_list", map[string]any{"realm": realm, "userId": userID})
+		userMappings := decodeResult[realmRoleMappingsOutput](t, res)
+		if !hasRoleName(userMappings.Direct, "auditor") || !hasRoleName(userMappings.Direct, "reporter-parent") {
+			t.Errorf("user direct roles = %v, want auditor and reporter-parent", userMappings.Direct)
+		}
+		if hasRoleName(userMappings.Direct, "reporter-child") {
+			t.Error("reporter-child must not be directly assigned to the user")
+		}
+		if !hasRoleName(userMappings.Effective, "reporter-child") {
+			t.Errorf("user effective roles = %v, want reporter-child through composite expansion", userMappings.Effective)
+		}
+
+		res = callTool(t, cs, "group_roles_list", map[string]any{"realm": realm, "groupId": groupID})
+		groupMappings := decodeResult[realmRoleMappingsOutput](t, res)
+		if !hasRoleName(groupMappings.Direct, "reporter-parent") {
+			t.Errorf("group direct roles = %v, want reporter-parent", groupMappings.Direct)
+		}
+		if !hasRoleName(groupMappings.Effective, "reporter-child") {
+			t.Errorf("group effective roles = %v, want reporter-child through composite expansion", groupMappings.Effective)
+		}
+
 		callTool(t, cs, "user_remove_realm_role", map[string]any{
 			"realm": realm, "userId": userID, "roles": []string{"auditor"},
 		})
@@ -642,6 +693,15 @@ func hasRoleName(roles []*gocloak.Role, name string) bool {
 func hasGroupID(groups []*gocloak.Group, id string) bool {
 	for _, g := range groups {
 		if deref(g.ID) == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUserID(users []*gocloak.User, id string) bool {
+	for _, u := range users {
+		if deref(u.ID) == id {
 			return true
 		}
 	}

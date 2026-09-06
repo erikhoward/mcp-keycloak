@@ -72,6 +72,12 @@ type sessionRefInput struct {
 	SessionID string `json:"sessionId" jsonschema:"session ID as returned by user_sessions_list"`
 }
 
+type listUserGroupsInput struct {
+	Realm  string `json:"realm" jsonschema:"realm name"`
+	UserID string `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
+	Max    int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
+}
+
 func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_list",
@@ -113,6 +119,36 @@ func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 			sessions = sessions[:max]
 		}
 		return nil, nonNil(sessions), nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_groups_list",
+		Title:       "List user groups",
+		Description: "List the groups of a user by internal user ID, with group IDs, names, and paths. Find the user ID with user_list.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listUserGroupsInput) (*mcp.CallToolResult, any, error) {
+		groups, err := admin.ListUserGroups(ctx, in.Realm, in.UserID, resolveMax(in.Max))
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nonNil(groups), nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_roles_list",
+		Title:       "List user realm roles",
+		Description: "List the realm roles of a user by internal user ID. Returns directly assigned roles and the effective set after composite expansion. Find the user ID with user_list.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRefInput) (*mcp.CallToolResult, any, error) {
+		direct, err := admin.GetUserRealmRoles(ctx, in.Realm, in.UserID)
+		if err != nil {
+			return nil, nil, err
+		}
+		effective, err := admin.GetCompositeUserRealmRoles(ctx, in.Realm, in.UserID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, realmRoleMappingsOutput{Direct: nonNil(direct), Effective: nonNil(effective)}, nil
 	})
 	if options.ReadOnly {
 		return
