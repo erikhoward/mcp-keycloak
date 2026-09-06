@@ -49,7 +49,7 @@ HTTPS, and transcript handling requirements.
 | Client scopes | `client_scope_list`, `client_scope_get`, `client_scope_create`, `client_scope_delete`, `client_scope_assign`, `client_scope_unassign` |
 | Audit events | `event_admin_list`, `event_login_list` |
 | Identity providers | `identity_provider_list`, `identity_provider_get`, `identity_provider_create`, `identity_provider_update`, `identity_provider_delete` |
-| Users | `user_list`, `user_get`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group` |
+| Users | `user_list`, `user_get`, `user_sessions_list`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group`, `user_logout_all`, `user_session_logout` |
 | Groups | `group_list`, `group_create`, `group_delete` |
 | Realm roles | `realm_role_list`, `realm_role_create`, `realm_role_delete` |
 

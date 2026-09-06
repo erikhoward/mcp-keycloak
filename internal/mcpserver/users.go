@@ -61,6 +61,17 @@ type userGroupInput struct {
 	GroupID string `json:"groupId" jsonschema:"internal group ID (UUID) as returned by group_list or group_create"`
 }
 
+type listUserSessionsInput struct {
+	Realm  string `json:"realm" jsonschema:"realm name"`
+	UserID string `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
+	Max    int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
+}
+
+type sessionRefInput struct {
+	Realm     string `json:"realm" jsonschema:"realm name"`
+	SessionID string `json:"sessionId" jsonschema:"session ID as returned by user_sessions_list"`
+}
+
 func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_list",
@@ -86,6 +97,22 @@ func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 			return nil, nil, err
 		}
 		return nil, user, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_sessions_list",
+		Title:       "List user sessions",
+		Description: "List the active sessions of a user by internal user ID, with start, last access, IP address, and the clients used. Find the user ID with user_list.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listUserSessionsInput) (*mcp.CallToolResult, any, error) {
+		sessions, err := admin.ListUserSessions(ctx, in.Realm, in.UserID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if max := resolveMax(in.Max); len(sessions) > max {
+			sessions = sessions[:max]
+		}
+		return nil, nonNil(sessions), nil
 	})
 	if options.ReadOnly {
 		return
@@ -222,5 +249,27 @@ func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 			return nil, nil, err
 		}
 		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "groupId": in.GroupID, "removed": true}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_logout_all",
+		Title:       "Log out all user sessions",
+		Description: "End all active sessions of a user by internal user ID. The user must log in again on every client.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRefInput) (*mcp.CallToolResult, any, error) {
+		if err := admin.LogoutAllUserSessions(ctx, in.Realm, in.UserID); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "userId": in.UserID, "loggedOut": true}, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "user_session_logout",
+		Title:       "End user session",
+		Description: "End one session by session ID, as returned by user_sessions_list. Other sessions of the user remain active.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in sessionRefInput) (*mcp.CallToolResult, any, error) {
+		if err := admin.LogoutUserSession(ctx, in.Realm, in.SessionID); err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"realm": in.Realm, "sessionId": in.SessionID, "ended": true}, nil
 	})
 }

@@ -229,6 +229,47 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("user sessions", func(t *testing.T) {
+		res := callTool(t, cs, "user_sessions_list", map[string]any{"realm": realm, "userId": userID})
+		sessions := decodeResult[[]*gocloak.UserSessionRepresentation](t, res)
+		if len(sessions) == 0 {
+			t.Fatal("expected an active session from the login in the event audit")
+		}
+		if got := deref(sessions[0].Username); got != "alice" {
+			t.Errorf("session username = %q, want alice", got)
+		}
+		sessionID := deref(sessions[0].ID)
+		if sessionID == "" {
+			t.Fatal("session has no ID")
+		}
+
+		callTool(t, cs, "user_session_logout", map[string]any{"realm": realm, "sessionId": sessionID})
+		res = callTool(t, cs, "user_sessions_list", map[string]any{"realm": realm, "userId": userID})
+		sessions = decodeResult[[]*gocloak.UserSessionRepresentation](t, res)
+		for _, session := range sessions {
+			if deref(session.ID) == sessionID {
+				t.Error("session is still active after user_session_logout")
+			}
+		}
+
+		gc := gocloak.NewClient(testBaseURL)
+		tok := verifyToken(t)
+		secret, err := gc.GetClientSecret(t.Context(), tok, realm, clientID)
+		if err != nil {
+			t.Fatalf("get client secret for login: %v", err)
+		}
+		if _, err := gc.Login(t.Context(), "web-app", deref(secret.Value), realm, "alice", "correct horse battery staple"); err != nil {
+			t.Fatalf("log in again to create a session: %v", err)
+		}
+
+		callTool(t, cs, "user_logout_all", map[string]any{"realm": realm, "userId": userID})
+		res = callTool(t, cs, "user_sessions_list", map[string]any{"realm": realm, "userId": userID})
+		sessions = decodeResult[[]*gocloak.UserSessionRepresentation](t, res)
+		if len(sessions) != 0 {
+			t.Errorf("%d sessions remain after user_logout_all", len(sessions))
+		}
+	})
+
 	t.Run("client scope lifecycle", func(t *testing.T) {
 		res := callTool(t, cs, "client_scope_list", map[string]any{"realm": realm})
 		scopes := decodeResult[[]*gocloak.ClientScope](t, res)
