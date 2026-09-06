@@ -18,36 +18,42 @@ import (
 type fakeAdmin struct {
 	AdminAPI
 
-	listRealms               func(ctx context.Context) ([]*gocloak.RealmRepresentation, error)
-	createRealm              func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
-	deleteRealm              func(ctx context.Context, realm string) error
-	listClients              func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
-	updateClient             func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
-	getClientSecret          func(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
-	listClientScopes         func(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
-	getClientScope           func(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
-	createClientScope        func(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error)
-	deleteClientScope        func(ctx context.Context, realm, id string) error
-	addDefaultScope          func(ctx context.Context, realm, clientID, scopeID string) error
-	addOptionalScope         func(ctx context.Context, realm, clientID, scopeID string) error
-	removeDefaultScope       func(ctx context.Context, realm, clientID, scopeID string) error
-	removeOptionalScope      func(ctx context.Context, realm, clientID, scopeID string) error
-	listEvents               func(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
-	listAdminEvents          func(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
-	listIdentityProviders    func(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error)
-	getIdentityProvider      func(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error)
-	createIdentityProvider   func(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
-	updateIdentityProvider   func(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
-	deleteIdentityProvider   func(ctx context.Context, realm, alias string) error
-	createUser               func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
-	setUserPassword          func(ctx context.Context, realm, userID, password string, temporary bool) error
-	addRealmRolesToUser      func(ctx context.Context, realm, userID string, roleNames []string) error
-	removeRealmRolesFromUser func(ctx context.Context, realm, userID string, roleNames []string) error
-	addUserToGroup           func(ctx context.Context, realm, userID, groupID string) error
-	removeUserFromGroup      func(ctx context.Context, realm, userID, groupID string) error
-	listUserSessions         func(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error)
-	logoutAllUserSessions    func(ctx context.Context, realm, userID string) error
-	logoutUserSession        func(ctx context.Context, realm, sessionID string) error
+	listRealms                  func(ctx context.Context) ([]*gocloak.RealmRepresentation, error)
+	createRealm                 func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
+	deleteRealm                 func(ctx context.Context, realm string) error
+	listClients                 func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
+	updateClient                func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
+	getClientSecret             func(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
+	listClientScopes            func(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
+	getClientScope              func(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
+	createClientScope           func(ctx context.Context, realm string, scope gocloak.ClientScope) (*gocloak.ClientScope, error)
+	deleteClientScope           func(ctx context.Context, realm, id string) error
+	addDefaultScope             func(ctx context.Context, realm, clientID, scopeID string) error
+	addOptionalScope            func(ctx context.Context, realm, clientID, scopeID string) error
+	removeDefaultScope          func(ctx context.Context, realm, clientID, scopeID string) error
+	removeOptionalScope         func(ctx context.Context, realm, clientID, scopeID string) error
+	listEvents                  func(ctx context.Context, realm string, params gocloak.GetEventsParams) ([]*gocloak.EventRepresentation, error)
+	listAdminEvents             func(ctx context.Context, realm string, params gocloak.GetAdminEventsParams) ([]*gocloak.AdminEventRepresentation, error)
+	listIdentityProviders       func(ctx context.Context, realm string) ([]*gocloak.IdentityProviderRepresentation, error)
+	getIdentityProvider         func(ctx context.Context, realm, alias string) (*gocloak.IdentityProviderRepresentation, error)
+	createIdentityProvider      func(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	updateIdentityProvider      func(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
+	deleteIdentityProvider      func(ctx context.Context, realm, alias string) error
+	createUser                  func(ctx context.Context, realm string, rep gocloak.User) (*gocloak.User, error)
+	setUserPassword             func(ctx context.Context, realm, userID, password string, temporary bool) error
+	addRealmRolesToUser         func(ctx context.Context, realm, userID string, roleNames []string) error
+	removeRealmRolesFromUser    func(ctx context.Context, realm, userID string, roleNames []string) error
+	addUserToGroup              func(ctx context.Context, realm, userID, groupID string) error
+	removeUserFromGroup         func(ctx context.Context, realm, userID, groupID string) error
+	listUserSessions            func(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error)
+	logoutAllUserSessions       func(ctx context.Context, realm, userID string) error
+	logoutUserSession           func(ctx context.Context, realm, sessionID string) error
+	listUserGroups              func(ctx context.Context, realm, userID string, max int) ([]*gocloak.Group, error)
+	listGroupMembers            func(ctx context.Context, realm, groupID string, max int) ([]*gocloak.User, error)
+	getUserRealmRoles           func(ctx context.Context, realm, userID string) ([]*gocloak.Role, error)
+	getCompositeUserRealmRoles  func(ctx context.Context, realm, userID string) ([]*gocloak.Role, error)
+	getGroupRealmRoles          func(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
+	getCompositeGroupRealmRoles func(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
 }
 
 func (f fakeAdmin) ListRealms(ctx context.Context) ([]*gocloak.RealmRepresentation, error) {
@@ -170,6 +176,30 @@ func (f fakeAdmin) LogoutUserSession(ctx context.Context, realm, sessionID strin
 	return f.logoutUserSession(ctx, realm, sessionID)
 }
 
+func (f fakeAdmin) ListUserGroups(ctx context.Context, realm, userID string, max int) ([]*gocloak.Group, error) {
+	return f.listUserGroups(ctx, realm, userID, max)
+}
+
+func (f fakeAdmin) ListGroupMembers(ctx context.Context, realm, groupID string, max int) ([]*gocloak.User, error) {
+	return f.listGroupMembers(ctx, realm, groupID, max)
+}
+
+func (f fakeAdmin) GetUserRealmRoles(ctx context.Context, realm, userID string) ([]*gocloak.Role, error) {
+	return f.getUserRealmRoles(ctx, realm, userID)
+}
+
+func (f fakeAdmin) GetCompositeUserRealmRoles(ctx context.Context, realm, userID string) ([]*gocloak.Role, error) {
+	return f.getCompositeUserRealmRoles(ctx, realm, userID)
+}
+
+func (f fakeAdmin) GetGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error) {
+	return f.getGroupRealmRoles(ctx, realm, groupID)
+}
+
+func (f fakeAdmin) GetCompositeGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error) {
+	return f.getCompositeGroupRealmRoles(ctx, realm, groupID)
+}
+
 // newTestClient connects an MCP client session to a server built from admin
 // over an in-memory transport.
 func newTestClient(t *testing.T, admin AdminAPI) *mcp.ClientSession {
@@ -231,7 +261,8 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"realm_list", "realm_get", "client_list", "client_get", "client_secret_get",
 		"client_scope_list", "client_scope_get", "event_admin_list", "event_login_list",
 		"identity_provider_list", "identity_provider_get", "user_list", "user_get",
-		"user_sessions_list", "group_list", "realm_role_list",
+		"user_sessions_list", "user_groups_list", "user_roles_list",
+		"group_list", "group_members_list", "group_roles_list", "realm_role_list",
 	} {
 		if !tools[name] {
 			t.Errorf("read-only server omitted read tool %q", name)
@@ -399,7 +430,8 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
 		"user_sessions_list", "user_logout_all", "user_session_logout",
-		"group_delete",
+		"user_groups_list", "user_roles_list",
+		"group_delete", "group_members_list", "group_roles_list",
 		"realm_role_delete",
 	} {
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
@@ -1064,5 +1096,109 @@ func TestUserSessionLogout(t *testing.T) {
 	out = decodeResult[map[string]any](t, res)
 	if out["ended"] != true {
 		t.Errorf("session-logout output = %v, want ended=true", out)
+	}
+}
+
+func hasRealmRole(roles []*gocloak.Role, name string) bool {
+	for _, role := range roles {
+		if deref(role.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestUserGroupsList(t *testing.T) {
+	var capturedMax int
+	admin := &fakeAdmin{listUserGroups: func(_ context.Context, realm, userID string, max int) ([]*gocloak.Group, error) {
+		if realm != "acme" || userID != "u-1" {
+			t.Errorf("ListUserGroups args = %q/%q, want acme/u-1", realm, userID)
+		}
+		capturedMax = max
+		return []*gocloak.Group{
+			{ID: gocloak.StringP("g-1"), Name: gocloak.StringP("engineers"), Path: gocloak.StringP("/engineers")},
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_groups_list", map[string]any{"realm": "acme", "userId": "u-1"})
+	groups := decodeResult[[]*gocloak.Group](t, res)
+	if len(groups) != 1 {
+		t.Fatalf("got %d groups, want 1", len(groups))
+	}
+	if got := deref(groups[0].Name); got != "engineers" {
+		t.Errorf("group name = %q, want engineers", got)
+	}
+	if got := deref(groups[0].Path); got != "/engineers" {
+		t.Errorf("group path = %q, want /engineers", got)
+	}
+	if capturedMax != defaultMax {
+		t.Errorf("max = %d, want default %d", capturedMax, defaultMax)
+	}
+}
+
+func TestGroupMembersList(t *testing.T) {
+	admin := &fakeAdmin{listGroupMembers: func(_ context.Context, realm, groupID string, max int) ([]*gocloak.User, error) {
+		if realm != "acme" || groupID != "g-1" {
+			t.Errorf("ListGroupMembers args = %q/%q, want acme/g-1", realm, groupID)
+		}
+		if max != 5 {
+			t.Errorf("max = %d, want 5", max)
+		}
+		return []*gocloak.User{{ID: gocloak.StringP("u-1"), Username: gocloak.StringP("alice")}}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "group_members_list", map[string]any{"realm": "acme", "groupId": "g-1", "max": 5})
+	users := decodeResult[[]*gocloak.User](t, res)
+	if len(users) != 1 || deref(users[0].Username) != "alice" {
+		t.Errorf("group members = %v, want alice", users)
+	}
+}
+
+func TestUserRolesListDirectAndEffective(t *testing.T) {
+	admin := &fakeAdmin{
+		getUserRealmRoles: func(_ context.Context, realm, userID string) ([]*gocloak.Role, error) {
+			if realm != "acme" || userID != "u-1" {
+				t.Errorf("GetUserRealmRoles args = %q/%q, want acme/u-1", realm, userID)
+			}
+			return []*gocloak.Role{{Name: gocloak.StringP("reporter-parent")}}, nil
+		},
+		getCompositeUserRealmRoles: func(context.Context, string, string) ([]*gocloak.Role, error) {
+			return []*gocloak.Role{
+				{Name: gocloak.StringP("reporter-parent")},
+				{Name: gocloak.StringP("reporter-child")},
+			}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_roles_list", map[string]any{"realm": "acme", "userId": "u-1"})
+	mappings := decodeResult[realmRoleMappingsOutput](t, res)
+	if !hasRealmRole(mappings.Direct, "reporter-parent") || hasRealmRole(mappings.Direct, "reporter-child") {
+		t.Errorf("direct roles = %v, want only reporter-parent", mappings.Direct)
+	}
+	if !hasRealmRole(mappings.Effective, "reporter-child") {
+		t.Errorf("effective roles = %v, want reporter-child through composite expansion", mappings.Effective)
+	}
+}
+
+func TestGroupRolesListEmptyMarshalsAsArrays(t *testing.T) {
+	admin := &fakeAdmin{
+		getGroupRealmRoles: func(_ context.Context, realm, groupID string) ([]*gocloak.Role, error) {
+			if realm != "acme" || groupID != "g-1" {
+				t.Errorf("GetGroupRealmRoles args = %q/%q, want acme/g-1", realm, groupID)
+			}
+			return nil, nil
+		},
+		getCompositeGroupRealmRoles: func(context.Context, string, string) ([]*gocloak.Role, error) {
+			return nil, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "group_roles_list", map[string]any{"realm": "acme", "groupId": "g-1"})
+	if got, want := resultText(t, res), `{"direct":[],"effective":[]}`; got != want {
+		t.Errorf("empty mapping output = %s, want %s", got, want)
 	}
 }

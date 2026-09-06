@@ -839,8 +839,9 @@ func (a *Admin) RemoveRealmRolesFromUser(ctx context.Context, realm, userID stri
 }
 
 // resolveRealmRoles looks up full role representations for the given names.
-// Keycloak's role-mapping endpoints match roles by ID, so name-only
-// representations are rejected with 404s.
+// Keycloak's role-mapping endpoints look up roles by name and then verify the
+// ID, so the request body needs the full representation; name-only or
+// id-only representations are rejected with 404s.
 func (a *Admin) resolveRealmRoles(ctx context.Context, realm string, roleNames []string) ([]gocloak.Role, error) {
 	tok, err := a.token(ctx)
 	if err != nil {
@@ -922,6 +923,52 @@ func (a *Admin) LogoutUserSession(ctx context.Context, realm, sessionID string) 
 	return nil
 }
 
+// ListUserGroups returns the groups of the user with the internal ID userID,
+// including parents of member subgroups. max <= 0 means no explicit limit.
+func (a *Admin) ListUserGroups(ctx context.Context, realm, userID string, max int) ([]*gocloak.Group, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	params := gocloak.GetGroupsParams{BriefRepresentation: gocloak.BoolP(true)}
+	if max > 0 {
+		params.Max = gocloak.IntP(max)
+	}
+	groups, err := a.client.GetUserGroups(ctx, tok, realm, userID, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list groups of user %q in realm %q", userID, realm), err)
+	}
+	return groups, nil
+}
+
+// GetUserRealmRoles returns the realm roles directly assigned to the user
+// with the internal ID userID.
+func (a *Admin) GetUserRealmRoles(ctx context.Context, realm, userID string) ([]*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := a.client.GetRealmRolesByUserID(ctx, tok, realm, userID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get realm roles of user %q in realm %q", userID, realm), err)
+	}
+	return roles, nil
+}
+
+// GetCompositeUserRealmRoles returns the effective realm roles of the user
+// with the internal ID userID, including composite expansion.
+func (a *Admin) GetCompositeUserRealmRoles(ctx context.Context, realm, userID string) ([]*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := a.client.GetCompositeRealmRolesByUserID(ctx, tok, realm, userID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get effective realm roles of user %q in realm %q", userID, realm), err)
+	}
+	return roles, nil
+}
+
 // Groups.
 
 // ListGroups returns groups in realm matching the optional search substring.
@@ -976,6 +1023,52 @@ func (a *Admin) DeleteGroup(ctx context.Context, realm, groupID string) error {
 		return wrapErr(fmt.Sprintf("delete group %q in realm %q", groupID, realm), err)
 	}
 	return nil
+}
+
+// ListGroupMembers returns the users in the group with the internal ID
+// groupID. max <= 0 means no explicit limit.
+func (a *Admin) ListGroupMembers(ctx context.Context, realm, groupID string, max int) ([]*gocloak.User, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	params := gocloak.GetGroupsParams{BriefRepresentation: gocloak.BoolP(true)}
+	if max > 0 {
+		params.Max = gocloak.IntP(max)
+	}
+	users, err := a.client.GetGroupMembers(ctx, tok, realm, groupID, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list members of group %q in realm %q", groupID, realm), err)
+	}
+	return users, nil
+}
+
+// GetGroupRealmRoles returns the realm roles directly assigned to the group
+// with the internal ID groupID.
+func (a *Admin) GetGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := a.client.GetRealmRolesByGroupID(ctx, tok, realm, groupID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get realm roles of group %q in realm %q", groupID, realm), err)
+	}
+	return roles, nil
+}
+
+// GetCompositeGroupRealmRoles returns the effective realm roles of the group
+// with the internal ID groupID, including composite expansion.
+func (a *Admin) GetCompositeGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := a.client.GetCompositeRealmRolesByGroupID(ctx, tok, realm, groupID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get effective realm roles of group %q in realm %q", groupID, realm), err)
+	}
+	return roles, nil
 }
 
 // Realm roles.

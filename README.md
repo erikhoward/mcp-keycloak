@@ -49,8 +49,8 @@ HTTPS, and transcript handling requirements.
 | Client scopes | `client_scope_list`, `client_scope_get`, `client_scope_create`, `client_scope_delete`, `client_scope_assign`, `client_scope_unassign` |
 | Audit events | `event_admin_list`, `event_login_list` |
 | Identity providers | `identity_provider_list`, `identity_provider_get`, `identity_provider_create`, `identity_provider_update`, `identity_provider_delete` |
-| Users | `user_list`, `user_get`, `user_sessions_list`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group`, `user_logout_all`, `user_session_logout` |
-| Groups | `group_list`, `group_create`, `group_delete` |
+| Users | `user_list`, `user_get`, `user_sessions_list`, `user_groups_list`, `user_roles_list`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group`, `user_logout_all`, `user_session_logout` |
+| Groups | `group_list`, `group_members_list`, `group_roles_list`, `group_create`, `group_delete` |
 | Realm roles | `realm_role_list`, `realm_role_create`, `realm_role_delete` |
 
 Notes for agents calling the tools:
@@ -69,6 +69,9 @@ Notes for agents calling the tools:
   output. The MCP client's transcript or model context may retain it.
 - List tools return at most 100 results by default. Use a smaller `max` to
   limit disclosure.
+- `user_roles_list` and `group_roles_list` return two lists: `direct`
+  assignments and `effective` roles after composite expansion.
+  `user_remove_realm_role` removes only direct assignments.
 - For `event_admin_list`, enable Admin Events in the realm. For
   `event_login_list`, enable user events. The tools support filters for event
   type, admin operation, and resource.
