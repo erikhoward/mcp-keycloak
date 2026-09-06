@@ -11,6 +11,35 @@ API. Speaks MCP over stdio. MIT licensed.
 Before connecting an account, review [Security](#security) for credential,
 HTTPS, and transcript handling requirements.
 
+## Benefits
+
+- An AI agent can create realms, users, clients, and roles on request.
+- You do not need the Keycloak admin console or the CLI for routine tasks.
+- Keycloak API failures return as tool errors, so the agent can see and
+  correct them.
+
+## Contents
+
+- [Benefits](#benefits)
+- [Quickstart](#quickstart)
+- [Tools](#tools)
+- [Security](#security)
+- [Configuration](#configuration)
+- [Install](#install)
+- [Development](#development)
+- [Layout](#layout)
+
+## Quickstart
+
+1. Install the binary. See [Installation](docs/install.md).
+2. Create a dedicated Keycloak administrator account. See
+   [Getting started](docs/getting-started.md).
+3. Connect your MCP client. See [Client setup](docs/client-setup.md).
+4. Ask the client to list the Keycloak realms. The first read-only call must
+   be `realm_list`.
+5. If the call fails, follow the
+   [troubleshooting steps](docs/getting-started.md#troubleshooting).
+
 ## Tools
 
 | Group | Tools |
@@ -26,25 +55,28 @@ HTTPS, and transcript handling requirements.
 
 Notes for agents calling the tools:
 
-- Realms are addressed by name; clients by their `clientId` (resolved
-  internally); users and groups by their internal UUID, which every create
-  and list tool returns. Role assignment matches realm roles by name.
-- `user_create` accepts an optional initial password, temporary by default so
-  the user must change it at first login.
-- Created clients are confidential (with an auto-generated secret, fetchable
-  via `client_secret_get`) unless `public: true` is passed.
+- Realms are addressed by name. Clients are addressed by their `clientId`,
+  which the tools resolve internally. Users and groups are addressed by their
+  internal UUID. Every create and list tool returns this UUID. Role
+  assignment matches realm roles by name.
+- `user_create` accepts an optional initial password. The password is
+  temporary by default, so the user must change it at first login.
+- Created clients are confidential unless you pass `public: true`. A
+  confidential client gets an auto-generated secret. Fetch it with
+  `client_secret_get`.
 - `client_secret_get` omits the secret by default. Set `includeSecret: true`
-  only when explicitly needed; the value is returned in structured output and
-  may be retained by the MCP client's transcript or model context.
-- List tools default to 100 results; use a smaller `max` to limit disclosure.
-- `event_admin_list` requires Admin Events enabled in the realm; `event_login_list`
-  requires user events enabled. Event type and admin operation/resource filters
-  are supported.
+  only when you need the value. The tool then returns the value in structured
+  output. The MCP client's transcript or model context may retain it.
+- List tools return at most 100 results by default. Use a smaller `max` to
+  limit disclosure.
+- For `event_admin_list`, enable Admin Events in the realm. For
+  `event_login_list`, enable user events. The tools support filters for event
+  type, admin operation, and resource.
 - See [event filters, date formats, and troubleshooting](docs/events.md) for
   audit queries.
 - Identity-provider tools configure realm login brokering, not MCP
   authentication. OIDC provider client secrets are redacted from every tool
-  response; provider changes can affect realm-wide login.
+  response. Provider changes can affect realm-wide login.
 - Failures surface as MCP tool errors with the Keycloak API status and
   message, so the model can see and correct them.
 
@@ -55,35 +87,38 @@ Use HTTPS for remote Keycloak connections. HTTP is accepted only for
 `http://127.0.0.1:8080` and `http://[::1]:8080`. Private LAN addresses,
 container hostnames, and DNS aliases that resolve to loopback do not qualify.
 URLs must not contain embedded credentials, query strings, or fragments.
-For a private CA, set `KEYCLOAK_CA_CERT_FILE` to a PEM bundle; TLS certificate
-verification remains enabled.
+For a private CA, set `KEYCLOAK_CA_CERT_FILE` to a PEM bundle. TLS
+certificate verification remains enabled.
 
 - **Administrator credentials:** use a dedicated, least-privileged account or
   service account. Configure exactly one authentication mode. Keep passwords
-  and `KEYCLOAK_ADMIN_CLIENT_SECRET` in the process environment or a protected,
-  gitignored `.env`, never in prompts, commits, or shared client configuration.
-  The server acts with the configured account's Keycloak permissions.
+  and `KEYCLOAK_ADMIN_CLIENT_SECRET` in the process environment or in a
+  protected, gitignored `.env`. Never put them in prompts, commits, or shared
+  client configuration. The server acts with the configured account's
+  Keycloak permissions.
 - **Client secrets:** `client_secret_get` omits the value unless
-  `includeSecret: true`. Opting in places the secret in structured tool output,
-  which the MCP client and model may retain. Do not request it for routine
-  inspection or copy it into tickets or chat.
-- **OIDC provider secrets:** provider tools redact sensitive configuration keys
-  in responses, including `clientSecret`. Secrets supplied to create/update
-  tools still enter tool arguments and may be retained in transcripts.
+  `includeSecret: true`. If you opt in, the secret enters structured tool
+  output. The MCP client and model may retain it. Do not request the value
+  for routine inspection. Do not copy it into tickets or chat.
+- **OIDC provider secrets:** provider tools redact sensitive configuration
+  keys in responses, including `clientSecret`. Secrets supplied to
+  create/update tools still enter tool arguments. Transcripts may retain
+  them.
 - **Event data:** audit representations and login details can contain user
-  identifiers, IP addresses, email addresses, resource paths, and configuration
-  data. Sensitive keys containing `secret`, `password`, `token`, or `credential`
-  are redacted case-insensitively. Admin JSON representations are sanitized
-  recursively; invalid JSON is replaced with `[REDACTED]`. This is key-based
-  redaction, not comprehensive anonymization: personal data, free text, URLs,
-  and values under other keys may remain sensitive.
-- **Client/model transcripts:** both tool inputs and outputs may be logged,
+  identifiers, IP addresses, email addresses, resource paths, and
+  configuration data. Sensitive keys containing `secret`, `password`,
+  `token`, or `credential` are redacted case-insensitively. Admin JSON
+  representations are sanitized recursively. Invalid JSON is replaced with
+  `[REDACTED]`. This is key-based redaction, not comprehensive anonymization.
+  Personal data, free text, URLs, and values under other keys may remain
+  sensitive.
+- **Client/model transcripts:** tool inputs and outputs may be logged,
   shared, or retained by the client or model provider. Check those retention
-  settings, restrict access, and review/redact diagnostics before sharing.
-  Rotate any credential accidentally exposed.
+  settings. Restrict access to transcripts. Review and redact diagnostics
+  before you share them. Rotate any credential that was exposed by accident.
 
-Set `KEYCLOAK_READ_ONLY=true` to omit mutating tools at startup. This does not
-reduce the Keycloak account's permissions or prevent data disclosure:
+Set `KEYCLOAK_READ_ONLY=true` to omit mutating tools at startup. This does
+not reduce the Keycloak account's permissions or prevent data disclosure:
 `client_secret_get` remains available, including its explicit secret opt-in.
 Combine read-only mode with scoped Keycloak permissions and narrow queries.
 
@@ -108,83 +143,28 @@ only for localhost or loopback development environments.
 
 Configure exactly one authentication mode: administrator username/password or
 a confidential client ID/secret with a service account. Service accounts are
-preferred for automation because their realm-management roles can be scoped
-explicitly; never grant more roles than the tools require.
+the better choice for automation because their realm-management roles can be
+scoped explicitly. Never grant more roles than the tools require.
 
-`KEYCLOAK_TIMEOUT` uses Go duration syntax such as `30s` or `2m`. The optional
-CA bundle extends the system trust store; certificate verification is never
-disabled. Set `KEYCLOAK_READ_ONLY=true` to omit all mutating tools from MCP
-discovery; read-only mode is enforced before tools are advertised.
+`KEYCLOAK_TIMEOUT` uses Go duration syntax such as `30s` or `2m`. The
+optional CA bundle extends the system trust store. Certificate verification
+is never disabled. Set `KEYCLOAK_READ_ONLY=true` to omit all mutating tools
+from MCP discovery. Read-only mode is enforced before tools are advertised.
 
-Variables can live in the process environment. When the server is started
-from a working directory containing `.env`, it loads that file as a local
-development convenience (see `.env.example`); existing environment variables
-always win. MCP clients should pass the variables explicitly in their server
+Variables can live in the process environment. When the server starts from a
+working directory that contains `.env`, it loads that file as a local
+development convenience. See `.env.example`. Existing environment variables
+always win. MCP clients must pass the variables explicitly in their server
 configuration.
 
-The server uses the permissions granted to its configured account. Start with
-a dedicated account and, where possible, a non-production realm.
+The server uses the permissions granted to its configured account. Start
+with a dedicated account and, where possible, a non-production realm.
 
 ## Install
 
-For the v0.2.0 release, download the archive for your platform from
-[GitHub Releases](https://github.com/erikhoward/mcp-keycloak/releases), extract
-`mcp-keycloak`, and verify it against `checksums.txt`.
-
-With Go 1.25 or newer, install the tagged command directly:
-
-```sh
-go install github.com/erikhoward/mcp-keycloak/cmd/mcp-keycloak@v0.2.0
-```
-
-The release workflow builds these targets without GoReleaser:
-
-- Linux amd64 and arm64
-- macOS amd64 and arm64
-- Windows amd64
-
-Maintainers publish a release by pushing an annotated `vX.Y.Z` tag. The
-tag-triggered workflow injects that version into the MCP server metadata,
-builds the archives, and publishes checksums.
-
-## Quickstart
-
-Build the binary in the repository:
-
-```sh
-go build -o ./mcp-keycloak ./cmd/mcp-keycloak
-```
-
-Create a dedicated Keycloak admin account, then configure the binary with
-`KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, and
-optionally `KEYCLOAK_ADMIN_REALM`. The account needs the permissions required
-by the tools you intend to use. Keep the password out of committed files.
-
-Choose a client-specific setup:
-
-- [Claude Desktop, Claude Code, Cursor, and OpenCode setup](docs/client-setup.md)
-
-After connecting, ask the client to list the Keycloak realms. The first
-read-only request should call `realm_list`. If it fails, verify the absolute
-binary path, the Keycloak base URL, and the administrator credentials.
-
-Use the absolute path to `mcp-keycloak` in the client configuration. The
-underlying stdio configuration has this shape:
-
-```json
-{
-  "mcpServers": {
-    "keycloak": {
-      "command": "/path/to/mcp-keycloak",
-      "env": {
-        "KEYCLOAK_URL": "https://keycloak.example.com",
-        "KEYCLOAK_ADMIN_USERNAME": "admin",
-        "KEYCLOAK_ADMIN_PASSWORD": "secret"
-      }
-    }
-  }
-}
-```
+Install the binary from a release archive, with Go, or from source. See
+[Installation](docs/install.md) for the platform matrix, checksum
+verification, and the build steps.
 
 ## Development
 
@@ -206,16 +186,16 @@ go test ./internal/mcpserver/ -run TestRealmCreate   # single test
 ```
 
 CI runs the vulnerability scan in the existing `test` job on pull requests
-and pushes to `main`. Findings and scanner errors fail the check rather than
-being reported as advisory. Require the `test` check in branch protection to
-block merging failing pull requests.
+and pushes to `main`. Findings and scanner errors fail the check. The scan
+is not advisory. Require the `test` check in branch protection to block
+merging failing pull requests.
 
-Integration tests start a disposable Keycloak 26.7 container via
-testcontainers (image pinned in `internal/mcpserver/integration_test.go`)
-and drive the full tool surface over an in-memory MCP transport.
+Integration tests start a disposable Keycloak 26.7 container through
+testcontainers. The image is pinned in `internal/mcpserver/integration_test.go`.
+The tests drive the full tool surface over an in-memory MCP transport.
 
 golangci-lint must be built with a Go toolchain at least as new as the one
-building the project; release binaries can lag. If `golangci-lint run` fails
+building the project. Release binaries can lag. If `golangci-lint run` fails
 with a Go-version complaint, install from source:
 
 ```sh
@@ -224,7 +204,8 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 
 GitHub Actions are pinned to immutable commits. Maintainers review updates
 monthly and promptly for security advisories using the
-[action update process](docs/action-updates.md).
+[action update process](docs/action-updates.md). Maintainers publish releases
+from annotated tags. See the [release process](docs/releasing.md).
 
 ## Layout
 

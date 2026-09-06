@@ -26,7 +26,7 @@ KEYCLOAK_ADMIN_REALM=master
 
 The URL is the Keycloak base URL, not a realm or token endpoint. Keep the
 password out of committed configuration files. The examples use a placeholder
-only; replace it in your local client configuration or use an environment
+only. Replace it in your local client configuration. Use an environment
 variable reference where the client supports one.
 
 ## Claude Desktop
@@ -61,7 +61,7 @@ the file.
 ## Claude Code
 
 Register the local stdio server with the CLI. The `--` separates Claude Code
-options from the command it should run:
+options from the command that starts the server:
 
 ```sh
 claude mcp add --transport stdio \
@@ -81,7 +81,7 @@ claude mcp get keycloak
 The command stores the environment values in Claude Code configuration. Avoid
 using this form on shared shell history or shared configuration when the
 password is sensitive. Claude Code also supports the same stdio JSON shape in
-`.mcp.json` or `~/.claude.json`; see its [MCP documentation](https://code.claude.com/docs/en/mcp).
+`.mcp.json` or `~/.claude.json`. See its [MCP documentation](https://code.claude.com/docs/en/mcp).
 
 ## Cursor
 
@@ -131,7 +131,7 @@ Then add this entry under `mcp`:
   "mcp": {
     "keycloak": {
       "type": "local",
-       "command": ["/absolute/path/to/mcp-keycloak"],
+      "command": ["/absolute/path/to/mcp-keycloak"],
       "environment": {
         "KEYCLOAK_URL": "{env:KEYCLOAK_URL}",
         "KEYCLOAK_ADMIN_USERNAME": "{env:KEYCLOAK_ADMIN_USERNAME}",
@@ -149,19 +149,8 @@ covers local server options and configuration precedence.
 ## Verify
 
 After configuring a client, ask it to list the Keycloak realms. A successful
-connection should call `realm_list` and return at least the realm where the
-admin account lives. Then try a read-only request such as getting that realm.
+connection calls `realm_list` and returns at least the realm where the admin
+account lives. Then try a read-only request such as getting that realm.
 
-If the client does not show the server:
-
-1. Run the absolute command directly and confirm the binary starts without a
-   configuration error.
-2. Check that `KEYCLOAK_URL` is the server base URL and that the credentials
-   authenticate in `KEYCLOAK_ADMIN_REALM`.
-3. Check the client logs for a malformed JSON configuration or an executable
-   path error.
-4. Ensure the client is not reusing an old server process; restart or reload
-   its MCP connections.
-
-Do not pipe diagnostic output into stdout. Stdout is reserved for MCP protocol
-messages; diagnostics belong on stderr.
+If the client does not show the server, follow the
+[troubleshooting steps](getting-started.md#troubleshooting).
