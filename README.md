@@ -127,14 +127,14 @@ a dedicated account and, where possible, a non-production realm.
 
 ## Install
 
-For the v0.1.0 release, download the archive for your platform from
+For the v0.2.0 release, download the archive for your platform from
 [GitHub Releases](https://github.com/erikhoward/mcp-keycloak/releases), extract
 `mcp-keycloak`, and verify it against `checksums.txt`.
 
 With Go 1.25 or newer, install the tagged command directly:
 
 ```sh
-go install github.com/erikhoward/mcp-keycloak/cmd/mcp-keycloak@v0.1.0
+go install github.com/erikhoward/mcp-keycloak/cmd/mcp-keycloak@v0.2.0
 ```
 
 The release workflow builds these targets without GoReleaser:
