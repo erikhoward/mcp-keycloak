@@ -50,7 +50,7 @@ HTTPS, and transcript handling requirements.
 | Audit events | `event_admin_list`, `event_login_list` |
 | Identity providers | `identity_provider_list`, `identity_provider_get`, `identity_provider_create`, `identity_provider_update`, `identity_provider_delete` |
 | Users | `user_list`, `user_get`, `user_sessions_list`, `user_groups_list`, `user_roles_list`, `user_create`, `user_update`, `user_set_password`, `user_delete`, `user_add_realm_role`, `user_remove_realm_role`, `user_add_to_group`, `user_remove_from_group`, `user_logout_all`, `user_session_logout` |
-| Groups | `group_list`, `group_members_list`, `group_roles_list`, `group_create`, `group_delete` |
+| Groups | `group_list`, `group_members_list`, `group_roles_list`, `group_get`, `group_children_list`, `group_create`, `group_child_create`, `group_update`, `group_delete` |
 | Realm roles | `realm_role_list`, `realm_role_create`, `realm_role_delete` |
 
 Notes for agents calling the tools:
@@ -58,7 +58,8 @@ Notes for agents calling the tools:
 - Realms are addressed by name. Clients are addressed by their `clientId`,
   which the tools resolve internally. Users and groups are addressed by their
   internal UUID. Every create and list tool returns this UUID. Role
-  assignment matches realm roles by name.
+  assignment matches realm roles by name. `group_get` also accepts a group
+  path such as `parent/child`.
 - `user_create` accepts an optional initial password. The password is
   temporary by default, so the user must change it at first login.
 - Created clients are confidential unless you pass `public: true`. A
