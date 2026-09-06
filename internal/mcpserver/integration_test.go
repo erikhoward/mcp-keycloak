@@ -454,9 +454,68 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 
 	t.Run("group list", func(t *testing.T) {
 		res := callTool(t, cs, "group_list", map[string]any{"realm": realm, "search": "engineers"})
-		groups := decodeResult[[]gocloak.Group](t, res)
+		groups := decodeResult[[]*gocloak.Group](t, res)
 		if len(groups) != 1 || deref(groups[0].ID) != groupID {
 			t.Fatalf("group_list returned %v, want the created engineers group", groups)
+		}
+	})
+
+	t.Run("group hierarchy and update", func(t *testing.T) {
+		res := callTool(t, cs, "group_child_create", map[string]any{
+			"realm": realm, "parentId": groupID, "name": "backend",
+		})
+		child := decodeResult[gocloak.Group](t, res)
+		childID := deref(child.ID)
+		if childID == "" {
+			t.Fatal("group_child_create returned no ID")
+		}
+		if got := deref(child.Path); got != "/engineers/backend" {
+			t.Errorf("child path = %q, want /engineers/backend", got)
+		}
+
+		res = callTool(t, cs, "group_children_list", map[string]any{"realm": realm, "groupId": groupID})
+		children := decodeResult[[]*gocloak.Group](t, res)
+		if !hasGroupID(children, childID) {
+			t.Error("group_children_list did not return the backend subgroup")
+		}
+
+		res = callTool(t, cs, "group_get", map[string]any{"realm": realm, "path": "engineers/backend"})
+		got := decodeResult[gocloak.Group](t, res)
+		if deref(got.ID) != childID {
+			t.Errorf("group_get by path returned ID %q, want %q", deref(got.ID), childID)
+		}
+
+		res = callTool(t, cs, "group_get", map[string]any{"realm": realm, "path": "/engineers/backend"})
+		got = decodeResult[gocloak.Group](t, res)
+		if deref(got.ID) != childID {
+			t.Errorf("group_get by leading-slash path returned ID %q, want %q", deref(got.ID), childID)
+		}
+
+		res = callTool(t, cs, "group_get", map[string]any{"realm": realm, "groupId": childID})
+		got = decodeResult[gocloak.Group](t, res)
+		if deref(got.Name) != "backend" {
+			t.Errorf("group_get by ID returned name %q, want backend", deref(got.Name))
+		}
+
+		callTool(t, cs, "group_update", map[string]any{
+			"realm": realm, "groupId": childID, "attributes": map[string]any{"team": []string{"core"}},
+		})
+
+		res = callTool(t, cs, "group_update", map[string]any{
+			"realm": realm, "groupId": childID, "name": "backend-renamed",
+		})
+		updated := decodeResult[gocloak.Group](t, res)
+		if got := deref(updated.Name); got != "backend-renamed" {
+			t.Errorf("updated name = %q, want backend-renamed", got)
+		}
+
+		res = callTool(t, cs, "group_get", map[string]any{"realm": realm, "groupId": childID})
+		got = decodeResult[gocloak.Group](t, res)
+		if got.Attributes == nil || len(got.Attributes["team"]) != 1 || got.Attributes["team"][0] != "core" {
+			t.Errorf("attributes after rename = %v, want team=[core] preserved", got.Attributes)
+		}
+		if gotPath := deref(got.Path); gotPath != "/engineers/backend-renamed" {
+			t.Errorf("path after rename = %q, want /engineers/backend-renamed", gotPath)
 		}
 	})
 

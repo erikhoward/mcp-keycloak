@@ -1071,6 +1071,106 @@ func (a *Admin) GetCompositeGroupRealmRoles(ctx context.Context, realm, groupID 
 	return roles, nil
 }
 
+// GetGroup returns the group with the internal ID groupID.
+func (a *Admin) GetGroup(ctx context.Context, realm, groupID string) (*gocloak.Group, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group, err := a.client.GetGroup(ctx, tok, realm, groupID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get group %q in realm %q", groupID, realm), err)
+	}
+	return group, nil
+}
+
+// GetGroupByPath returns the group at path, such as "parent/child". A
+// leading slash is accepted and removed.
+func (a *Admin) GetGroupByPath(ctx context.Context, realm, path string) (*gocloak.Group, error) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return nil, fmt.Errorf("get group by path in realm %q: empty path", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group, err := a.client.GetGroupByPath(ctx, tok, realm, trimmed)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get group by path %q in realm %q", trimmed, realm), err)
+	}
+	return group, nil
+}
+
+// UpdateGroup partially updates the group with the internal ID rep.ID and
+// returns the updated representation. Name and attributes are changed only
+// when set on rep; other fields are preserved. Keycloak requires a name on
+// every group update, so the existing name is kept when rep.Name is nil.
+func (a *Admin) UpdateGroup(ctx context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error) {
+	if rep.ID == nil || *rep.ID == "" {
+		return nil, fmt.Errorf("update group in realm %q: empty groupId", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := a.client.GetGroup(ctx, tok, realm, *rep.ID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get group %q before update in realm %q", *rep.ID, realm), err)
+	}
+	merged := *existing
+	merged.SubGroups = nil
+	if rep.Name != nil {
+		merged.Name = rep.Name
+	}
+	if rep.Attributes != nil {
+		merged.Attributes = rep.Attributes
+	}
+	if err := a.client.UpdateGroup(ctx, tok, realm, merged); err != nil {
+		return nil, wrapErr(fmt.Sprintf("update group %q in realm %q", *rep.ID, realm), err)
+	}
+	return a.GetGroup(ctx, realm, *rep.ID)
+}
+
+// ListChildGroups returns the direct child groups of the group with the
+// internal ID groupID. max <= 0 means no explicit limit.
+func (a *Admin) ListChildGroups(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	params := gocloak.GetChildGroupsParams{BriefRepresentation: gocloak.BoolP(true)}
+	if max > 0 {
+		params.Max = gocloak.IntP(max)
+	}
+	children, err := a.client.GetChildGroups(ctx, tok, realm, groupID, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list child groups of group %q in realm %q", groupID, realm), err)
+	}
+	return children, nil
+}
+
+// CreateChildGroup creates the named subgroup under the group with the
+// internal ID parentID and returns the created representation.
+func (a *Admin) CreateChildGroup(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error) {
+	if name == "" {
+		return nil, fmt.Errorf("create child group in realm %q: empty name", realm)
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := a.client.CreateChildGroup(ctx, tok, realm, parentID, gocloak.Group{Name: gocloak.StringP(name)})
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("create child group %q under group %q in realm %q", name, parentID, realm), err)
+	}
+	group, err := a.client.GetGroup(ctx, tok, realm, id)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get created child group %q in realm %q", name, realm), err)
+	}
+	return group, nil
+}
+
 // Realm roles.
 
 // ListRealmRoles returns the realm roles of realm. max <= 0 means no

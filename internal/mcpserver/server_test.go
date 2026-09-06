@@ -54,6 +54,11 @@ type fakeAdmin struct {
 	getCompositeUserRealmRoles  func(ctx context.Context, realm, userID string) ([]*gocloak.Role, error)
 	getGroupRealmRoles          func(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
 	getCompositeGroupRealmRoles func(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
+	getGroup                    func(ctx context.Context, realm, groupID string) (*gocloak.Group, error)
+	getGroupByPath              func(ctx context.Context, realm, path string) (*gocloak.Group, error)
+	updateGroup                 func(ctx context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error)
+	listChildGroups             func(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error)
+	createChildGroup            func(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error)
 }
 
 func (f fakeAdmin) ListRealms(ctx context.Context) ([]*gocloak.RealmRepresentation, error) {
@@ -200,6 +205,26 @@ func (f fakeAdmin) GetCompositeGroupRealmRoles(ctx context.Context, realm, group
 	return f.getCompositeGroupRealmRoles(ctx, realm, groupID)
 }
 
+func (f fakeAdmin) GetGroup(ctx context.Context, realm, groupID string) (*gocloak.Group, error) {
+	return f.getGroup(ctx, realm, groupID)
+}
+
+func (f fakeAdmin) GetGroupByPath(ctx context.Context, realm, path string) (*gocloak.Group, error) {
+	return f.getGroupByPath(ctx, realm, path)
+}
+
+func (f fakeAdmin) UpdateGroup(ctx context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error) {
+	return f.updateGroup(ctx, realm, rep)
+}
+
+func (f fakeAdmin) ListChildGroups(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error) {
+	return f.listChildGroups(ctx, realm, groupID, max)
+}
+
+func (f fakeAdmin) CreateChildGroup(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error) {
+	return f.createChildGroup(ctx, realm, parentID, name)
+}
+
 // newTestClient connects an MCP client session to a server built from admin
 // over an in-memory transport.
 func newTestClient(t *testing.T, admin AdminAPI) *mcp.ClientSession {
@@ -251,7 +276,8 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"user_create", "user_update", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role", "user_add_to_group", "user_remove_from_group",
 		"user_logout_all", "user_session_logout",
-		"group_create", "group_delete", "realm_role_create", "realm_role_delete",
+		"group_create", "group_child_create", "group_update", "group_delete",
+		"realm_role_create", "realm_role_delete",
 	} {
 		if tools[name] {
 			t.Errorf("read-only server advertises mutating tool %q", name)
@@ -262,7 +288,8 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"client_scope_list", "client_scope_get", "event_admin_list", "event_login_list",
 		"identity_provider_list", "identity_provider_get", "user_list", "user_get",
 		"user_sessions_list", "user_groups_list", "user_roles_list",
-		"group_list", "group_members_list", "group_roles_list", "realm_role_list",
+		"group_list", "group_members_list", "group_roles_list",
+		"group_get", "group_children_list", "realm_role_list",
 	} {
 		if !tools[name] {
 			t.Errorf("read-only server omitted read tool %q", name)
@@ -432,6 +459,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"user_sessions_list", "user_logout_all", "user_session_logout",
 		"user_groups_list", "user_roles_list",
 		"group_delete", "group_members_list", "group_roles_list",
+		"group_get", "group_children_list", "group_child_create", "group_update",
 		"realm_role_delete",
 	} {
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
@@ -1200,5 +1228,124 @@ func TestGroupRolesListEmptyMarshalsAsArrays(t *testing.T) {
 	res := callTool(t, cs, "group_roles_list", map[string]any{"realm": "acme", "groupId": "g-1"})
 	if got, want := resultText(t, res), `{"direct":[],"effective":[]}`; got != want {
 		t.Errorf("empty mapping output = %s, want %s", got, want)
+	}
+}
+
+func TestGroupGetByPathAndID(t *testing.T) {
+	admin := &fakeAdmin{
+		getGroup: func(_ context.Context, realm, groupID string) (*gocloak.Group, error) {
+			if realm != "acme" || groupID != "g-1" {
+				t.Errorf("GetGroup args = %q/%q, want acme/g-1", realm, groupID)
+			}
+			return &gocloak.Group{ID: gocloak.StringP("g-1"), Name: gocloak.StringP("engineers"), Path: gocloak.StringP("/engineers")}, nil
+		},
+		getGroupByPath: func(_ context.Context, realm, path string) (*gocloak.Group, error) {
+			if realm != "acme" || path != "engineers/backend" {
+				t.Errorf("GetGroupByPath args = %q/%q, want acme/engineers/backend", realm, path)
+			}
+			return &gocloak.Group{ID: gocloak.StringP("g-2"), Name: gocloak.StringP("backend"), Path: gocloak.StringP("/engineers/backend")}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "group_get", map[string]any{"realm": "acme", "groupId": "g-1"})
+	group := decodeResult[gocloak.Group](t, res)
+	if deref(group.Name) != "engineers" {
+		t.Errorf("group_get by ID returned name %q, want engineers", deref(group.Name))
+	}
+
+	res = callTool(t, cs, "group_get", map[string]any{"realm": "acme", "path": "engineers/backend"})
+	group = decodeResult[gocloak.Group](t, res)
+	if deref(group.ID) != "g-2" || deref(group.Path) != "/engineers/backend" {
+		t.Errorf("group_get by path returned ID=%q path=%q, want g-2 and /engineers/backend", deref(group.ID), deref(group.Path))
+	}
+}
+
+func TestGroupGetRejectsAmbiguousReference(t *testing.T) {
+	cs := newTestClient(t, &fakeAdmin{})
+
+	for _, args := range []map[string]any{
+		{"realm": "acme"},
+		{"realm": "acme", "groupId": "g-1", "path": "engineers"},
+	} {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "group_get", Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool protocol error: %v", err)
+		}
+		if !res.IsError {
+			t.Errorf("group_get with %v must return a tool error", args)
+		}
+	}
+}
+
+func TestGroupUpdatePassesPartialChanges(t *testing.T) {
+	var captured gocloak.Group
+	admin := &fakeAdmin{updateGroup: func(_ context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error) {
+		if realm != "acme" {
+			t.Errorf("UpdateGroup realm = %q, want acme", realm)
+		}
+		captured = rep
+		return &gocloak.Group{
+			ID:         rep.ID,
+			Name:       rep.Name,
+			Path:       gocloak.StringP("/engineers/backend-renamed"),
+			Attributes: rep.Attributes,
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "group_update", map[string]any{
+		"realm": "acme", "groupId": "g-2", "name": "backend-renamed",
+		"attributes": map[string]any{"team": []string{"core"}},
+	})
+	if got := deref(captured.ID); got != "g-2" {
+		t.Errorf("captured ID = %q, want g-2", got)
+	}
+	if got := deref(captured.Name); got != "backend-renamed" {
+		t.Errorf("captured name = %q, want backend-renamed", got)
+	}
+	if captured.Attributes["team"] == nil || captured.Attributes["team"][0] != "core" {
+		t.Errorf("captured attributes = %v, want team=[core]", captured.Attributes)
+	}
+	updated := decodeResult[gocloak.Group](t, res)
+	if got := deref(updated.Path); got != "/engineers/backend-renamed" {
+		t.Errorf("updated path = %q, want /engineers/backend-renamed", got)
+	}
+}
+
+func TestGroupChildTools(t *testing.T) {
+	var createdUnder [2]string
+	admin := &fakeAdmin{
+		createChildGroup: func(_ context.Context, realm, parentID, name string) (*gocloak.Group, error) {
+			createdUnder = [2]string{realm + ":" + parentID, name}
+			return &gocloak.Group{ID: gocloak.StringP("g-2"), Name: gocloak.StringP(name), Path: gocloak.StringP("/engineers/" + name)}, nil
+		},
+		listChildGroups: func(_ context.Context, realm, groupID string, max int) ([]*gocloak.Group, error) {
+			if realm != "acme" || groupID != "g-1" {
+				t.Errorf("ListChildGroups args = %q/%q, want acme/g-1", realm, groupID)
+			}
+			if max != defaultMax {
+				t.Errorf("max = %d, want default %d", max, defaultMax)
+			}
+			return []*gocloak.Group{{ID: gocloak.StringP("g-2"), Name: gocloak.StringP("backend"), Path: gocloak.StringP("/engineers/backend")}}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "group_child_create", map[string]any{
+		"realm": "acme", "parentId": "g-1", "name": "backend",
+	})
+	if createdUnder != [2]string{"acme:g-1", "backend"} {
+		t.Errorf("CreateChildGroup args = %v, want acme:g-1 / backend", createdUnder)
+	}
+	child := decodeResult[gocloak.Group](t, res)
+	if got := deref(child.Path); got != "/engineers/backend" {
+		t.Errorf("child path = %q, want /engineers/backend", got)
+	}
+
+	res = callTool(t, cs, "group_children_list", map[string]any{"realm": "acme", "groupId": "g-1"})
+	children := decodeResult[[]*gocloak.Group](t, res)
+	if len(children) != 1 || deref(children[0].ID) != "g-2" {
+		t.Errorf("children = %v, want the backend subgroup", children)
 	}
 }

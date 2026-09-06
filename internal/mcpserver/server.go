@@ -71,6 +71,11 @@ type AdminAPI interface {
 	GetCompositeUserRealmRoles(ctx context.Context, realm, userID string) ([]*gocloak.Role, error)
 	GetGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
 	GetCompositeGroupRealmRoles(ctx context.Context, realm, groupID string) ([]*gocloak.Role, error)
+	GetGroup(ctx context.Context, realm, groupID string) (*gocloak.Group, error)
+	GetGroupByPath(ctx context.Context, realm, path string) (*gocloak.Group, error)
+	UpdateGroup(ctx context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error)
+	ListChildGroups(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error)
+	CreateChildGroup(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error)
 
 	ListGroups(ctx context.Context, realm, search string, max int) ([]*gocloak.Group, error)
 	CreateGroup(ctx context.Context, realm, name string) (*gocloak.Group, error)
