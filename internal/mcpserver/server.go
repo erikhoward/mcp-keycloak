@@ -62,6 +62,9 @@ type AdminAPI interface {
 	RemoveRealmRolesFromUser(ctx context.Context, realm, userID string, roleNames []string) error
 	AddUserToGroup(ctx context.Context, realm, userID, groupID string) error
 	RemoveUserFromGroup(ctx context.Context, realm, userID, groupID string) error
+	ListUserSessions(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error)
+	LogoutAllUserSessions(ctx context.Context, realm, userID string) error
+	LogoutUserSession(ctx context.Context, realm, sessionID string) error
 
 	ListGroups(ctx context.Context, realm, search string, max int) ([]*gocloak.Group, error)
 	CreateGroup(ctx context.Context, realm, name string) (*gocloak.Group, error)

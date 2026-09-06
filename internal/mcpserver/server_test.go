@@ -45,6 +45,9 @@ type fakeAdmin struct {
 	removeRealmRolesFromUser func(ctx context.Context, realm, userID string, roleNames []string) error
 	addUserToGroup           func(ctx context.Context, realm, userID, groupID string) error
 	removeUserFromGroup      func(ctx context.Context, realm, userID, groupID string) error
+	listUserSessions         func(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error)
+	logoutAllUserSessions    func(ctx context.Context, realm, userID string) error
+	logoutUserSession        func(ctx context.Context, realm, sessionID string) error
 }
 
 func (f fakeAdmin) ListRealms(ctx context.Context) ([]*gocloak.RealmRepresentation, error) {
@@ -155,6 +158,18 @@ func (f fakeAdmin) RemoveUserFromGroup(ctx context.Context, realm, userID, group
 	return f.removeUserFromGroup(ctx, realm, userID, groupID)
 }
 
+func (f fakeAdmin) ListUserSessions(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error) {
+	return f.listUserSessions(ctx, realm, userID)
+}
+
+func (f fakeAdmin) LogoutAllUserSessions(ctx context.Context, realm, userID string) error {
+	return f.logoutAllUserSessions(ctx, realm, userID)
+}
+
+func (f fakeAdmin) LogoutUserSession(ctx context.Context, realm, sessionID string) error {
+	return f.logoutUserSession(ctx, realm, sessionID)
+}
+
 // newTestClient connects an MCP client session to a server built from admin
 // over an in-memory transport.
 func newTestClient(t *testing.T, admin AdminAPI) *mcp.ClientSession {
@@ -205,6 +220,7 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"identity_provider_create", "identity_provider_update", "identity_provider_delete",
 		"user_create", "user_update", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role", "user_add_to_group", "user_remove_from_group",
+		"user_logout_all", "user_session_logout",
 		"group_create", "group_delete", "realm_role_create", "realm_role_delete",
 	} {
 		if tools[name] {
@@ -215,7 +231,7 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"realm_list", "realm_get", "client_list", "client_get", "client_secret_get",
 		"client_scope_list", "client_scope_get", "event_admin_list", "event_login_list",
 		"identity_provider_list", "identity_provider_get", "user_list", "user_get",
-		"group_list", "realm_role_list",
+		"user_sessions_list", "group_list", "realm_role_list",
 	} {
 		if !tools[name] {
 			t.Errorf("read-only server omitted read tool %q", name)
@@ -382,6 +398,7 @@ func TestRequiredArgumentsValidated(t *testing.T) {
 		"user_get", "user_set_password", "user_delete",
 		"user_add_realm_role", "user_remove_realm_role",
 		"user_add_to_group", "user_remove_from_group",
+		"user_sessions_list", "user_logout_all", "user_session_logout",
 		"group_delete",
 		"realm_role_delete",
 	} {
@@ -940,5 +957,112 @@ func TestUserGroupMembership(t *testing.T) {
 	out = decodeResult[map[string]any](t, res)
 	if out["removed"] != true {
 		t.Errorf("remove output = %v, want removed=true", out)
+	}
+}
+
+func TestUserSessionsList(t *testing.T) {
+	admin := &fakeAdmin{listUserSessions: func(_ context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error) {
+		if realm != "acme" || userID != "u-1" {
+			t.Errorf("ListUserSessions args = %q/%q, want acme/u-1", realm, userID)
+		}
+		return []*gocloak.UserSessionRepresentation{
+			{
+				ID:        gocloak.StringP("s-1"),
+				Username:  gocloak.StringP("alice"),
+				UserID:    gocloak.StringP("u-1"),
+				IPAddress: gocloak.StringP("10.0.0.9"),
+				Clients:   map[string]string{"c-1": "web-app"},
+			},
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_sessions_list", map[string]any{"realm": "acme", "userId": "u-1"})
+	sessions := decodeResult[[]*gocloak.UserSessionRepresentation](t, res)
+	if len(sessions) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions))
+	}
+	if got := deref(sessions[0].ID); got != "s-1" {
+		t.Errorf("session ID = %q, want s-1", got)
+	}
+	if got := deref(sessions[0].Username); got != "alice" {
+		t.Errorf("session username = %q, want alice", got)
+	}
+	if got := sessions[0].Clients["c-1"]; got != "web-app" {
+		t.Errorf("session client = %q, want web-app", got)
+	}
+}
+
+func TestUserSessionsListCapsResults(t *testing.T) {
+	admin := &fakeAdmin{listUserSessions: func(context.Context, string, string) ([]*gocloak.UserSessionRepresentation, error) {
+		return []*gocloak.UserSessionRepresentation{
+			{ID: gocloak.StringP("s-1")},
+			{ID: gocloak.StringP("s-2")},
+			{ID: gocloak.StringP("s-3")},
+		}, nil
+	}}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_sessions_list", map[string]any{"realm": "acme", "userId": "u-1", "max": 2})
+	sessions := decodeResult[[]*gocloak.UserSessionRepresentation](t, res)
+	if len(sessions) != 2 {
+		t.Fatalf("got %d sessions, want 2", len(sessions))
+	}
+	if got := deref(sessions[1].ID); got != "s-2" {
+		t.Errorf("second session ID = %q, want s-2", got)
+	}
+}
+
+func TestUserSessionsListErrorBecomesToolError(t *testing.T) {
+	admin := &fakeAdmin{listUserSessions: func(context.Context, string, string) ([]*gocloak.UserSessionRepresentation, error) {
+		return nil, errors.New("boom: not found")
+	}}
+	cs := newTestClient(t, admin)
+
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "user_sessions_list",
+		Arguments: map[string]any{"realm": "acme", "userId": "u-1"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error result")
+	}
+	if text := resultText(t, res); !strings.Contains(text, "boom: not found") {
+		t.Errorf("error text %q does not contain the cause", text)
+	}
+}
+
+func TestUserSessionLogout(t *testing.T) {
+	var loggedOutAll, endedSession [2]string
+	admin := &fakeAdmin{
+		logoutAllUserSessions: func(_ context.Context, realm, userID string) error {
+			loggedOutAll = [2]string{realm, userID}
+			return nil
+		},
+		logoutUserSession: func(_ context.Context, realm, sessionID string) error {
+			endedSession = [2]string{realm, sessionID}
+			return nil
+		},
+	}
+	cs := newTestClient(t, admin)
+
+	res := callTool(t, cs, "user_logout_all", map[string]any{"realm": "acme", "userId": "u-1"})
+	if loggedOutAll != [2]string{"acme", "u-1"} {
+		t.Errorf("LogoutAllUserSessions args = %v, want acme/u-1", loggedOutAll)
+	}
+	out := decodeResult[map[string]any](t, res)
+	if out["loggedOut"] != true {
+		t.Errorf("logout-all output = %v, want loggedOut=true", out)
+	}
+
+	res = callTool(t, cs, "user_session_logout", map[string]any{"realm": "acme", "sessionId": "s-1"})
+	if endedSession != [2]string{"acme", "s-1"} {
+		t.Errorf("LogoutUserSession args = %v, want acme/s-1", endedSession)
+	}
+	out = decodeResult[map[string]any](t, res)
+	if out["ended"] != true {
+		t.Errorf("session-logout output = %v, want ended=true", out)
 	}
 }

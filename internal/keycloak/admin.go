@@ -883,6 +883,45 @@ func (a *Admin) RemoveUserFromGroup(ctx context.Context, realm, userID, groupID 
 	return nil
 }
 
+// ListUserSessions returns the active sessions of the user with the internal
+// ID userID.
+func (a *Admin) ListUserSessions(ctx context.Context, realm, userID string) ([]*gocloak.UserSessionRepresentation, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := a.client.GetUserSessions(ctx, tok, realm, userID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list sessions of user %q in realm %q", userID, realm), err)
+	}
+	return sessions, nil
+}
+
+// LogoutAllUserSessions ends all active sessions of the user with the
+// internal ID userID.
+func (a *Admin) LogoutAllUserSessions(ctx context.Context, realm, userID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.LogoutAllSessions(ctx, tok, realm, userID); err != nil {
+		return wrapErr(fmt.Sprintf("log out all sessions of user %q in realm %q", userID, realm), err)
+	}
+	return nil
+}
+
+// LogoutUserSession ends the session with the internal ID sessionID.
+func (a *Admin) LogoutUserSession(ctx context.Context, realm, sessionID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.LogoutUserSession(ctx, tok, realm, sessionID); err != nil {
+		return wrapErr(fmt.Sprintf("log out session %q in realm %q", sessionID, realm), err)
+	}
+	return nil
+}
+
 // Groups.
 
 // ListGroups returns groups in realm matching the optional search substring.
