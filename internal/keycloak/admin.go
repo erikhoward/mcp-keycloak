@@ -1222,3 +1222,264 @@ func (a *Admin) DeleteRealmRole(ctx context.Context, realm, name string) error {
 	}
 	return nil
 }
+
+func (a *Admin) GetRealmRole(ctx context.Context, realm, name string) (*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	role, err := a.client.GetRealmRole(ctx, tok, realm, name)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get realm role %q in realm %q", name, realm), err)
+	}
+	return role, nil
+}
+
+func (a *Admin) UpdateRealmRole(ctx context.Context, realm, name string, rep gocloak.Role) (*gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	current, err := a.client.GetRealmRole(ctx, tok, realm, name)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get realm role %q before update", name), err)
+	}
+	updated := mergeRealmRole(*current, rep)
+	if err := a.client.UpdateRealmRole(ctx, tok, realm, name, updated); err != nil {
+		return nil, wrapErr(fmt.Sprintf("update realm role %q in realm %q", name, realm), err)
+	}
+	updatedName := name
+	if updated.Name != nil && *updated.Name != "" {
+		updatedName = *updated.Name
+	}
+	role, err := a.client.GetRealmRole(ctx, tok, realm, updatedName)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get updated realm role %q in realm %q", updatedName, realm), err)
+	}
+	return role, nil
+}
+
+func mergeRealmRole(current, changes gocloak.Role) gocloak.Role {
+	if changes.Name != nil {
+		current.Name = changes.Name
+	}
+	if changes.Description != nil {
+		current.Description = changes.Description
+	}
+	if changes.Attributes != nil {
+		current.Attributes = changes.Attributes
+	}
+	return current
+}
+
+func (a *Admin) AddRealmRoleComposites(ctx context.Context, realm, name string, roleNames []string) error {
+	roles, err := a.resolveRealmRoles(ctx, realm, roleNames)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddRealmRoleComposite(ctx, tok, realm, name, roles); err != nil {
+		return wrapErr(fmt.Sprintf("add composites to realm role %q", name), err)
+	}
+	return nil
+}
+
+func (a *Admin) RemoveRealmRoleComposites(ctx context.Context, realm, name string, roleNames []string) error {
+	roles, err := a.resolveRealmRoles(ctx, realm, roleNames)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteRealmRoleComposite(ctx, tok, realm, name, roles); err != nil {
+		return wrapErr(fmt.Sprintf("remove composites from realm role %q", name), err)
+	}
+	return nil
+}
+
+func (a *Admin) resolveClient(ctx context.Context, realm, clientID string) (string, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return "", err
+	}
+	clients, err := a.client.GetClients(ctx, tok, realm, gocloak.GetClientsParams{ClientID: gocloak.StringP(clientID)})
+	if err != nil {
+		return "", wrapErr(fmt.Sprintf("resolve client %q in realm %q", clientID, realm), err)
+	}
+	if len(clients) != 1 || clients[0].ID == nil {
+		return "", fmt.Errorf("resolve client %q in realm %q: expected exactly one client, got %d", clientID, realm, len(clients))
+	}
+	return *clients[0].ID, nil
+}
+
+func (a *Admin) ListClientRoles(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Role, error) {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	params := gocloak.GetRoleParams{BriefRepresentation: gocloak.BoolP(true)}
+	if max > 0 {
+		params.Max = gocloak.IntP(max)
+	}
+	roles, err := a.client.GetClientRoles(ctx, tok, realm, id, params)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list roles for client %q", clientID), err)
+	}
+	return roles, nil
+}
+
+func (a *Admin) CreateClientRole(ctx context.Context, realm, clientID string, rep gocloak.Role) (*gocloak.Role, error) {
+	if rep.Name == nil || *rep.Name == "" {
+		return nil, fmt.Errorf("create client role: empty name")
+	}
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.client.CreateClientRole(ctx, tok, realm, id, rep); err != nil {
+		return nil, wrapErr(fmt.Sprintf("create role for client %q", clientID), err)
+	}
+	role, err := a.client.GetClientRole(ctx, tok, realm, id, *rep.Name)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get created role %q for client %q", *rep.Name, clientID), err)
+	}
+	return role, nil
+}
+
+func (a *Admin) DeleteClientRole(ctx context.Context, realm, clientID, name string) error {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteClientRole(ctx, tok, realm, id, name); err != nil {
+		return wrapErr(fmt.Sprintf("delete role %q for client %q", name, clientID), err)
+	}
+	return nil
+}
+
+func (a *Admin) resolveClientRoles(ctx context.Context, realm, clientUUID string, names []string) ([]gocloak.Role, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles := make([]gocloak.Role, 0, len(names))
+	for _, name := range names {
+		role, err := a.client.GetClientRole(ctx, tok, realm, clientUUID, name)
+		if err != nil {
+			return nil, wrapErr(fmt.Sprintf("resolve client role %q", name), err)
+		}
+		roles = append(roles, *role)
+	}
+	return roles, nil
+}
+
+func (a *Admin) AddClientRolesToUser(ctx context.Context, realm, clientID, userID string, names []string) error {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return err
+	}
+	roles, err := a.resolveClientRoles(ctx, realm, id, names)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.AddClientRolesToUser(ctx, tok, realm, id, userID, roles); err != nil {
+		return wrapErr("add client roles to user", err)
+	}
+	return nil
+}
+
+func (a *Admin) RemoveClientRolesFromUser(ctx context.Context, realm, clientID, userID string, names []string) error {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return err
+	}
+	roles, err := a.resolveClientRoles(ctx, realm, id, names)
+	if err != nil {
+		return err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteClientRolesFromUser(ctx, tok, realm, id, userID, roles); err != nil {
+		return wrapErr("remove client roles from user", err)
+	}
+	return nil
+}
+
+func (a *Admin) GetUserClientRoles(ctx context.Context, realm, clientID, userID string) ([]*gocloak.Role, error) {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := a.client.GetClientRolesByUserID(ctx, tok, realm, id, userID)
+	if err != nil {
+		return nil, wrapErr("list user client roles", err)
+	}
+	return roles, nil
+}
+
+func (a *Admin) CountUsers(ctx context.Context, realm, search string) (int, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return 0, err
+	}
+	params := gocloak.GetUsersParams{}
+	if search != "" {
+		params.Search = gocloak.StringP(search)
+	}
+	count, err := a.client.GetUserCount(ctx, tok, realm, params)
+	if err != nil {
+		return 0, wrapErr(fmt.Sprintf("count users in realm %q", realm), err)
+	}
+	return count, nil
+}
+
+func (a *Admin) GetUserBruteForceStatus(ctx context.Context, realm, userID string) (*gocloak.BruteForceStatus, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	status, err := a.client.GetUserBruteForceDetectionStatus(ctx, tok, realm, userID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get brute-force status for user %q", userID), err)
+	}
+	return status, nil
+}
+
+func (a *Admin) GetServerInfo(ctx context.Context) (*gocloak.ServerInfoRepresentation, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info, err := a.client.GetServerInfo(ctx, tok)
+	if err != nil {
+		return nil, wrapErr("get server info", err)
+	}
+	return info, nil
+}

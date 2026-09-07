@@ -59,6 +59,59 @@ type fakeAdmin struct {
 	updateGroup                 func(ctx context.Context, realm string, rep gocloak.Group) (*gocloak.Group, error)
 	listChildGroups             func(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error)
 	createChildGroup            func(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error)
+	countUsers                  func(context.Context, string, string) (int, error)
+	getBruteForceStatus         func(context.Context, string, string) (*gocloak.BruteForceStatus, error)
+	getRealmRole                func(context.Context, string, string) (*gocloak.Role, error)
+	updateRealmRole             func(context.Context, string, string, gocloak.Role) (*gocloak.Role, error)
+	addRealmRoleComposites      func(context.Context, string, string, []string) error
+	removeRealmRoleComposites   func(context.Context, string, string, []string) error
+	listClientRoles             func(context.Context, string, string, int) ([]*gocloak.Role, error)
+	createClientRole            func(context.Context, string, string, gocloak.Role) (*gocloak.Role, error)
+	deleteClientRole            func(context.Context, string, string, string) error
+	addClientRolesToUser        func(context.Context, string, string, string, []string) error
+	removeClientRolesFromUser   func(context.Context, string, string, string, []string) error
+	getUserClientRoles          func(context.Context, string, string, string) ([]*gocloak.Role, error)
+	getServerInfo               func(context.Context) (*gocloak.ServerInfoRepresentation, error)
+}
+
+func (f fakeAdmin) CountUsers(c context.Context, r, s string) (int, error) {
+	return f.countUsers(c, r, s)
+}
+func (f fakeAdmin) GetUserBruteForceStatus(c context.Context, r, u string) (*gocloak.BruteForceStatus, error) {
+	return f.getBruteForceStatus(c, r, u)
+}
+func (f fakeAdmin) GetRealmRole(c context.Context, r, n string) (*gocloak.Role, error) {
+	return f.getRealmRole(c, r, n)
+}
+func (f fakeAdmin) UpdateRealmRole(c context.Context, r, n string, role gocloak.Role) (*gocloak.Role, error) {
+	return f.updateRealmRole(c, r, n, role)
+}
+func (f fakeAdmin) AddRealmRoleComposites(c context.Context, r, n string, roles []string) error {
+	return f.addRealmRoleComposites(c, r, n, roles)
+}
+func (f fakeAdmin) RemoveRealmRoleComposites(c context.Context, r, n string, roles []string) error {
+	return f.removeRealmRoleComposites(c, r, n, roles)
+}
+func (f fakeAdmin) ListClientRoles(c context.Context, r, id string, max int) ([]*gocloak.Role, error) {
+	return f.listClientRoles(c, r, id, max)
+}
+func (f fakeAdmin) CreateClientRole(c context.Context, r, id string, role gocloak.Role) (*gocloak.Role, error) {
+	return f.createClientRole(c, r, id, role)
+}
+func (f fakeAdmin) DeleteClientRole(c context.Context, r, id, n string) error {
+	return f.deleteClientRole(c, r, id, n)
+}
+func (f fakeAdmin) AddClientRolesToUser(c context.Context, r, id, u string, roles []string) error {
+	return f.addClientRolesToUser(c, r, id, u, roles)
+}
+func (f fakeAdmin) RemoveClientRolesFromUser(c context.Context, r, id, u string, roles []string) error {
+	return f.removeClientRolesFromUser(c, r, id, u, roles)
+}
+func (f fakeAdmin) GetUserClientRoles(c context.Context, r, id, u string) ([]*gocloak.Role, error) {
+	return f.getUserClientRoles(c, r, id, u)
+}
+func (f fakeAdmin) GetServerInfo(c context.Context) (*gocloak.ServerInfoRepresentation, error) {
+	return f.getServerInfo(c)
 }
 
 func (f fakeAdmin) ListRealms(ctx context.Context) ([]*gocloak.RealmRepresentation, error) {
@@ -278,6 +331,8 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"user_logout_all", "user_session_logout",
 		"group_create", "group_child_create", "group_update", "group_delete",
 		"realm_role_create", "realm_role_delete",
+		"realm_role_update", "realm_role_composite_add", "realm_role_composite_remove",
+		"client_role_create", "client_role_delete", "user_add_client_role", "user_remove_client_role",
 	} {
 		if tools[name] {
 			t.Errorf("read-only server advertises mutating tool %q", name)
@@ -290,11 +345,84 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 		"user_sessions_list", "user_groups_list", "user_roles_list",
 		"group_list", "group_members_list", "group_roles_list",
 		"group_get", "group_children_list", "realm_role_list",
+		"realm_role_get", "client_role_list", "user_client_roles_list",
+		"user_count", "user_bruteforce_status", "server_info",
 	} {
 		if !tools[name] {
 			t.Errorf("read-only server omitted read tool %q", name)
 		}
 	}
+}
+
+func TestNewReadTools(t *testing.T) {
+	admin := &fakeAdmin{
+		countUsers: func(_ context.Context, realm, search string) (int, error) {
+			if realm != "acme" || search != "alice" {
+				t.Errorf("CountUsers args = %q/%q", realm, search)
+			}
+			return 7, nil
+		},
+		getBruteForceStatus: func(_ context.Context, realm, userID string) (*gocloak.BruteForceStatus, error) {
+			return &gocloak.BruteForceStatus{NumFailures: gocloak.IntP(3), Disabled: gocloak.BoolP(true)}, nil
+		},
+		getRealmRole: func(context.Context, string, string) (*gocloak.Role, error) {
+			return &gocloak.Role{Name: gocloak.StringP("auditor")}, nil
+		},
+		listClientRoles: func(_ context.Context, _, clientID string, max int) ([]*gocloak.Role, error) {
+			if clientID != "portal" || max != defaultMax {
+				t.Errorf("ListClientRoles args = %q/%d", clientID, max)
+			}
+			return []*gocloak.Role{{Name: gocloak.StringP("viewer")}}, nil
+		},
+		getUserClientRoles: func(context.Context, string, string, string) ([]*gocloak.Role, error) {
+			return []*gocloak.Role{{Name: gocloak.StringP("viewer")}}, nil
+		},
+		getServerInfo: func(context.Context) (*gocloak.ServerInfoRepresentation, error) {
+			return &gocloak.ServerInfoRepresentation{SystemInfo: &gocloak.SystemInfoRepresentation{Version: gocloak.StringP("26.7.3"), UserName: gocloak.StringP("secret-host-user")}}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+	if got := decodeResult[map[string]int](t, callTool(t, cs, "user_count", map[string]any{"realm": "acme", "search": "alice"}))["count"]; got != 7 {
+		t.Errorf("count = %d", got)
+	}
+	callTool(t, cs, "user_bruteforce_status", map[string]any{"realm": "acme", "userId": "u1"})
+	callTool(t, cs, "realm_role_get", map[string]any{"realm": "acme", "name": "auditor"})
+	callTool(t, cs, "client_role_list", map[string]any{"realm": "acme", "clientId": "portal"})
+	callTool(t, cs, "user_client_roles_list", map[string]any{"realm": "acme", "clientId": "portal", "userId": "u1"})
+	text := resultText(t, callTool(t, cs, "server_info", nil))
+	if !strings.Contains(text, "26.7.3") || strings.Contains(text, "secret-host-user") {
+		t.Errorf("unsafe server info output: %s", text)
+	}
+}
+
+func TestNewMutatingRoleTools(t *testing.T) {
+	admin := &fakeAdmin{
+		updateRealmRole: func(_ context.Context, realm, old string, role gocloak.Role) (*gocloak.Role, error) {
+			if realm != "acme" || old != "old" || deref(role.Name) != "new" {
+				t.Errorf("unexpected realm role update")
+			}
+			return &gocloak.Role{Name: role.Name}, nil
+		},
+		addRealmRoleComposites:    func(context.Context, string, string, []string) error { return nil },
+		removeRealmRoleComposites: func(context.Context, string, string, []string) error { return nil },
+		createClientRole: func(_ context.Context, _, clientID string, role gocloak.Role) (*gocloak.Role, error) {
+			if clientID != "portal" {
+				t.Errorf("clientID = %q", clientID)
+			}
+			return &role, nil
+		},
+		deleteClientRole:          func(context.Context, string, string, string) error { return nil },
+		addClientRolesToUser:      func(context.Context, string, string, string, []string) error { return nil },
+		removeClientRolesFromUser: func(context.Context, string, string, string, []string) error { return nil },
+	}
+	cs := newTestClient(t, admin)
+	callTool(t, cs, "realm_role_update", map[string]any{"realm": "acme", "name": "old", "newName": "new"})
+	callTool(t, cs, "realm_role_composite_add", map[string]any{"realm": "acme", "name": "parent", "roles": []string{"child"}})
+	callTool(t, cs, "realm_role_composite_remove", map[string]any{"realm": "acme", "name": "parent", "roles": []string{"child"}})
+	callTool(t, cs, "client_role_create", map[string]any{"realm": "acme", "clientId": "portal", "name": "viewer"})
+	callTool(t, cs, "client_role_delete", map[string]any{"realm": "acme", "clientId": "portal", "name": "viewer"})
+	callTool(t, cs, "user_add_client_role", map[string]any{"realm": "acme", "clientId": "portal", "userId": "u1", "roles": []string{"viewer"}})
+	callTool(t, cs, "user_remove_client_role", map[string]any{"realm": "acme", "clientId": "portal", "userId": "u1", "roles": []string{"viewer"}})
 }
 
 // callTool invokes a tool and fails the test unless it succeeds.

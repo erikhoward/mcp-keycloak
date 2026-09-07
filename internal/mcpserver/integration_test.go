@@ -82,6 +82,50 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 	groupID := createGroup(t, cs, realm)
 	_ = createRealmRole(t, cs, realm)
 
+	t.Run("new read tools", func(t *testing.T) {
+		count := decodeResult[map[string]int](t, callTool(t, cs, "user_count", map[string]any{"realm": realm}))
+		if count["count"] < 1 {
+			t.Errorf("user_count = %d, want at least 1", count["count"])
+		}
+		callTool(t, cs, "user_bruteforce_status", map[string]any{"realm": realm, "userId": userID})
+		info := decodeResult[serverInfoOutput](t, callTool(t, cs, "server_info", nil))
+		if deref(info.Version) == "" {
+			t.Error("server_info returned no version")
+		}
+	})
+
+	t.Run("realm role update and composites", func(t *testing.T) {
+		callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "report-reader"})
+		callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "report-bundle"})
+		callTool(t, cs, "realm_role_update", map[string]any{"realm": realm, "name": "report-reader", "newName": "report-viewer", "attributes": map[string][]string{"tier": {"read"}}})
+		role := decodeResult[gocloak.Role](t, callTool(t, cs, "realm_role_get", map[string]any{"realm": realm, "name": "report-viewer"}))
+		if deref(role.Name) != "report-viewer" {
+			t.Errorf("updated role name = %q", deref(role.Name))
+		}
+		callTool(t, cs, "realm_role_composite_add", map[string]any{"realm": realm, "name": "report-bundle", "roles": []string{"report-viewer"}})
+		callTool(t, cs, "user_add_realm_role", map[string]any{"realm": realm, "userId": userID, "roles": []string{"report-bundle"}})
+		mappings := decodeResult[realmRoleMappingsOutput](t, callTool(t, cs, "user_roles_list", map[string]any{"realm": realm, "userId": userID}))
+		if !hasRoleName(mappings.Effective, "report-viewer") {
+			t.Error("composite child role was not effective for user")
+		}
+		callTool(t, cs, "realm_role_composite_remove", map[string]any{"realm": realm, "name": "report-bundle", "roles": []string{"report-viewer"}})
+	})
+
+	t.Run("client role lifecycle and assignment", func(t *testing.T) {
+		callTool(t, cs, "client_role_create", map[string]any{"realm": realm, "clientId": "web-app", "name": "invoice-reader"})
+		roles := decodeResult[[]*gocloak.Role](t, callTool(t, cs, "client_role_list", map[string]any{"realm": realm, "clientId": "web-app"}))
+		if !hasRoleName(roles, "invoice-reader") {
+			t.Error("client_role_list omitted invoice-reader")
+		}
+		callTool(t, cs, "user_add_client_role", map[string]any{"realm": realm, "clientId": "web-app", "userId": userID, "roles": []string{"invoice-reader"}})
+		roles = decodeResult[[]*gocloak.Role](t, callTool(t, cs, "user_client_roles_list", map[string]any{"realm": realm, "clientId": "web-app", "userId": userID}))
+		if !hasRoleName(roles, "invoice-reader") {
+			t.Error("assigned client role was not listed")
+		}
+		callTool(t, cs, "user_remove_client_role", map[string]any{"realm": realm, "clientId": "web-app", "userId": userID, "roles": []string{"invoice-reader"}})
+		callTool(t, cs, "client_role_delete", map[string]any{"realm": realm, "clientId": "web-app", "name": "invoice-reader"})
+	})
+
 	t.Run("realm settings round trip", func(t *testing.T) {
 		res := callTool(t, cs, "realm_get", map[string]any{"realm": realm})
 		got := decodeResult[gocloak.RealmRepresentation](t, res)

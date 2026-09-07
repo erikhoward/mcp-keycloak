@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Nerzal/gocloak/v14"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,6 +24,20 @@ type realmRoleRefInput struct {
 	Name  string `json:"name" jsonschema:"role name"`
 }
 
+type updateRealmRoleInput struct {
+	Realm       string              `json:"realm" jsonschema:"realm name"`
+	Name        string              `json:"name" jsonschema:"current role name"`
+	NewName     *string             `json:"newName,omitempty" jsonschema:"new role name; omit to leave unchanged"`
+	Description *string             `json:"description,omitempty" jsonschema:"new description; omit to leave unchanged"`
+	Attributes  map[string][]string `json:"attributes,omitempty" jsonschema:"replacement role attributes; omit to leave unchanged"`
+}
+
+type realmRoleCompositesInput struct {
+	Realm string   `json:"realm" jsonschema:"realm name"`
+	Name  string   `json:"name" jsonschema:"composite parent role name"`
+	Roles []string `json:"roles" jsonschema:"child realm role names"`
+}
+
 func addRealmRoleTools(s *mcp.Server, admin AdminAPI, options Options) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_role_list",
@@ -35,6 +50,13 @@ func addRealmRoleTools(s *mcp.Server, admin AdminAPI, options Options) {
 			return nil, nil, err
 		}
 		return nil, nonNil(roles), nil
+	})
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "realm_role_get", Title: "Get realm role",
+		Description: "Get a realm-level role by name.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in realmRoleRefInput) (*mcp.CallToolResult, any, error) {
+		role, err := admin.GetRealmRole(ctx, in.Realm, in.Name)
+		return nil, role, err
 	})
 	if options.ReadOnly {
 		return
@@ -56,6 +78,33 @@ func addRealmRoleTools(s *mcp.Server, admin AdminAPI, options Options) {
 		}
 		return nil, created, nil
 	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "realm_role_update", Title: "Update realm role",
+		Description: "Rename a realm role or replace its description or attributes.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: gocloak.BoolP(false)},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateRealmRoleInput) (*mcp.CallToolResult, any, error) {
+		rep := gocloak.Role{Name: in.NewName, Description: in.Description, Attributes: in.Attributes}
+		role, err := admin.UpdateRealmRole(ctx, in.Realm, in.Name, rep)
+		return nil, role, err
+	})
+
+	addComposite := func(remove bool) func(context.Context, *mcp.CallToolRequest, realmRoleCompositesInput) (*mcp.CallToolResult, any, error) {
+		return func(ctx context.Context, _ *mcp.CallToolRequest, in realmRoleCompositesInput) (*mcp.CallToolResult, any, error) {
+			if len(in.Roles) == 0 {
+				return nil, nil, fmt.Errorf("roles must contain at least one role name")
+			}
+			var err error
+			if remove {
+				err = admin.RemoveRealmRoleComposites(ctx, in.Realm, in.Name, in.Roles)
+			} else {
+				err = admin.AddRealmRoleComposites(ctx, in.Realm, in.Name, in.Roles)
+			}
+			return nil, map[string]any{"realm": in.Realm, "name": in.Name, "roles": in.Roles}, err
+		}
+	}
+	mcp.AddTool(s, &mcp.Tool{Name: "realm_role_composite_add", Title: "Add realm role composites", Description: "Attach child realm roles to a composite role.", Annotations: &mcp.ToolAnnotations{DestructiveHint: gocloak.BoolP(false)}}, addComposite(false))
+	mcp.AddTool(s, &mcp.Tool{Name: "realm_role_composite_remove", Title: "Remove realm role composites", Description: "Detach child realm roles from a composite role.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, addComposite(true))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "realm_role_delete",
