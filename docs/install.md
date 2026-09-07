@@ -10,7 +10,7 @@ needs Go 1.25 or newer.
 
 1. Download the archive for your platform from
    [GitHub Releases](https://github.com/erikhoward/mcp-keycloak/releases).
-   The current release is v0.2.0.
+   The current release is v0.3.0.
 2. Extract the `mcp-keycloak` binary from the archive.
 3. Verify the binary against the `checksums.txt` file from the same release.
 
@@ -25,7 +25,7 @@ Built targets:
 With Go 1.25 or newer, install the tagged command directly:
 
 ```sh
-go install github.com/erikhoward/mcp-keycloak/cmd/mcp-keycloak@v0.2.0
+go install github.com/erikhoward/mcp-keycloak/cmd/mcp-keycloak@v0.3.0
 ```
 
 ## Build from source
