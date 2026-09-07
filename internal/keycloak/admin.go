@@ -1495,3 +1495,133 @@ func (a *Admin) GetServerInfo(ctx context.Context) (*gocloak.ServerInfoRepresent
 	}
 	return info, nil
 }
+
+func (a *Admin) GetClientServiceAccount(ctx context.Context, realm, clientID string) (*gocloak.User, error) {
+	id, err := a.resolveClient(ctx, realm, clientID)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	user, err := a.client.GetClientServiceAccount(ctx, tok, realm, id)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get service-account user for client %q", clientID), err)
+	}
+	return user, nil
+}
+
+func (a *Admin) ListIdentityProviderMappers(ctx context.Context, realm, alias string) ([]*gocloak.IdentityProviderMapper, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mappers, err := a.client.GetIdentityProviderMappers(ctx, tok, realm, alias)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list mappers for identity provider %q", alias), err)
+	}
+	return mappers, nil
+}
+
+func (a *Admin) GetIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string) (*gocloak.IdentityProviderMapper, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mapper, err := a.client.GetIdentityProviderMapperByID(ctx, tok, realm, alias, mapperID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get mapper %q for identity provider %q", mapperID, alias), err)
+	}
+	return mapper, nil
+}
+
+func (a *Admin) CreateIdentityProviderMapper(ctx context.Context, realm, alias string, mapper gocloak.IdentityProviderMapper) (*gocloak.IdentityProviderMapper, error) {
+	if mapper.Name == nil || *mapper.Name == "" {
+		return nil, fmt.Errorf("create identity provider mapper: empty name")
+	}
+	if mapper.IdentityProviderMapper == nil || *mapper.IdentityProviderMapper == "" {
+		return nil, fmt.Errorf("create identity provider mapper: empty mapper type")
+	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := a.client.CreateIdentityProviderMapper(ctx, tok, realm, alias, mapper)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("create mapper for identity provider %q", alias), err)
+	}
+	created, err := a.client.GetIdentityProviderMapperByID(ctx, tok, realm, alias, id)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get created mapper %q for identity provider %q", id, alias), err)
+	}
+	return created, nil
+}
+
+func (a *Admin) UpdateIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string, changes gocloak.IdentityProviderMapper) (*gocloak.IdentityProviderMapper, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	current, err := a.client.GetIdentityProviderMapperByID(ctx, tok, realm, alias, mapperID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get mapper %q before update", mapperID), err)
+	}
+	updated := mergeIdentityProviderMapper(*current, changes)
+	updated.ID = gocloak.StringP(mapperID)
+	if err := a.client.UpdateIdentityProviderMapper(ctx, tok, realm, alias, updated); err != nil {
+		return nil, wrapErr(fmt.Sprintf("update mapper %q for identity provider %q", mapperID, alias), err)
+	}
+	result, err := a.client.GetIdentityProviderMapperByID(ctx, tok, realm, alias, mapperID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("get updated mapper %q", mapperID), err)
+	}
+	return result, nil
+}
+
+func mergeIdentityProviderMapper(current, changes gocloak.IdentityProviderMapper) gocloak.IdentityProviderMapper {
+	if changes.Name != nil {
+		current.Name = changes.Name
+	}
+	if changes.IdentityProviderMapper != nil {
+		current.IdentityProviderMapper = changes.IdentityProviderMapper
+	}
+	if changes.Config != nil {
+		current.Config = changes.Config
+	}
+	return current
+}
+
+func (a *Admin) DeleteIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteIdentityProviderMapper(ctx, tok, realm, alias, mapperID); err != nil {
+		return wrapErr(fmt.Sprintf("delete mapper %q for identity provider %q", mapperID, alias), err)
+	}
+	return nil
+}
+
+func (a *Admin) ListUserFederatedIdentities(ctx context.Context, realm, userID string) ([]*gocloak.FederatedIdentityRepresentation, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	identities, err := a.client.GetUserFederatedIdentities(ctx, tok, realm, userID)
+	if err != nil {
+		return nil, wrapErr(fmt.Sprintf("list federated identities for user %q", userID), err)
+	}
+	return identities, nil
+}
+
+func (a *Admin) DeleteUserFederatedIdentity(ctx context.Context, realm, userID, providerID string) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	if err := a.client.DeleteUserFederatedIdentity(ctx, tok, realm, userID, providerID); err != nil {
+		return wrapErr(fmt.Sprintf("unlink identity provider %q from user %q", providerID, userID), err)
+	}
+	return nil
+}
