@@ -227,12 +227,15 @@ func (a *Admin) DeleteRealm(ctx context.Context, realm string) error {
 // ListClients returns the clients in realm. If clientID is non-empty, only
 // clients with that client identifier are returned. max <= 0 means no
 // explicit limit.
-func (a *Admin) ListClients(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error) {
+func (a *Admin) ListClients(ctx context.Context, realm, clientID string, first, max int) ([]*gocloak.Client, error) {
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	params := gocloak.GetClientsParams{}
+	if first > 0 {
+		params.First = gocloak.IntP(first)
+	}
 	if clientID != "" {
 		params.ClientID = gocloak.StringP(clientID)
 	}
@@ -708,12 +711,15 @@ func cloneStringMap(source map[string]string) map[string]string {
 // ListUsers returns users in realm matching the optional search (substring
 // against username, email and names) or exact username. max <= 0 means no
 // explicit limit.
-func (a *Admin) ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error) {
+func (a *Admin) ListUsers(ctx context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error) {
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	params := gocloak.GetUsersParams{BriefRepresentation: gocloak.BoolP(true)}
+	if first > 0 {
+		params.First = gocloak.IntP(first)
+	}
 	if search != "" {
 		params.Search = gocloak.StringP(search)
 	}
@@ -973,12 +979,15 @@ func (a *Admin) GetCompositeUserRealmRoles(ctx context.Context, realm, userID st
 
 // ListGroups returns groups in realm matching the optional search substring.
 // max <= 0 means no explicit limit.
-func (a *Admin) ListGroups(ctx context.Context, realm, search string, max int) ([]*gocloak.Group, error) {
+func (a *Admin) ListGroups(ctx context.Context, realm, search string, first, max int) ([]*gocloak.Group, error) {
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	params := gocloak.GetGroupsParams{BriefRepresentation: gocloak.BoolP(true)}
+	if first > 0 {
+		params.First = gocloak.IntP(first)
+	}
 	if search != "" {
 		params.Search = gocloak.StringP(search)
 	}
@@ -1175,12 +1184,15 @@ func (a *Admin) CreateChildGroup(ctx context.Context, realm, parentID, name stri
 
 // ListRealmRoles returns the realm roles of realm. max <= 0 means no
 // explicit limit.
-func (a *Admin) ListRealmRoles(ctx context.Context, realm string, max int) ([]*gocloak.Role, error) {
+func (a *Admin) ListRealmRoles(ctx context.Context, realm string, first, max int) ([]*gocloak.Role, error) {
 	tok, err := a.token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	params := gocloak.GetRoleParams{BriefRepresentation: gocloak.BoolP(true)}
+	if first > 0 {
+		params.First = gocloak.IntP(first)
+	}
 	if max > 0 {
 		params.Max = gocloak.IntP(max)
 	}

@@ -12,6 +12,7 @@ type listUsersInput struct {
 	Realm    string `json:"realm" jsonschema:"realm name"`
 	Search   string `json:"search,omitempty" jsonschema:"substring matched against username, email, first and last name"`
 	Username string `json:"username,omitempty" jsonschema:"exact username match"`
+	First    int    `json:"first,omitempty" jsonschema:"zero-based index of the first result; default 0"`
 	Max      int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
 }
 
@@ -98,7 +99,10 @@ func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 		Description: "List the users of a realm, optionally filtered by a search substring or an exact username. Returns internal user IDs needed by other user tools.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listUsersInput) (*mcp.CallToolResult, any, error) {
-		users, err := admin.ListUsers(ctx, in.Realm, in.Search, in.Username, resolveMax(in.Max))
+		if err := validateFirst(in.First); err != nil {
+			return nil, nil, err
+		}
+		users, err := admin.ListUsers(ctx, in.Realm, in.Search, in.Username, in.First, resolveMax(in.Max))
 		if err != nil {
 			return nil, nil, err
 		}

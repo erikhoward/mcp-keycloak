@@ -21,7 +21,10 @@ type fakeAdmin struct {
 	listRealms                  func(ctx context.Context) ([]*gocloak.RealmRepresentation, error)
 	createRealm                 func(ctx context.Context, rep gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
 	deleteRealm                 func(ctx context.Context, realm string) error
-	listClients                 func(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
+	listClients                 func(ctx context.Context, realm, clientID string, first, max int) ([]*gocloak.Client, error)
+	listUsers                   func(ctx context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error)
+	listGroups                  func(ctx context.Context, realm, search string, first, max int) ([]*gocloak.Group, error)
+	listRealmRoles              func(ctx context.Context, realm string, first, max int) ([]*gocloak.Role, error)
 	updateClient                func(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error)
 	getClientSecret             func(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
 	listClientScopes            func(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
@@ -126,8 +129,17 @@ func (f fakeAdmin) DeleteRealm(ctx context.Context, realm string) error {
 	return f.deleteRealm(ctx, realm)
 }
 
-func (f fakeAdmin) ListClients(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error) {
-	return f.listClients(ctx, realm, clientID, max)
+func (f fakeAdmin) ListClients(ctx context.Context, realm, clientID string, first, max int) ([]*gocloak.Client, error) {
+	return f.listClients(ctx, realm, clientID, first, max)
+}
+func (f fakeAdmin) ListUsers(ctx context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error) {
+	return f.listUsers(ctx, realm, search, username, first, max)
+}
+func (f fakeAdmin) ListGroups(ctx context.Context, realm, search string, first, max int) ([]*gocloak.Group, error) {
+	return f.listGroups(ctx, realm, search, first, max)
+}
+func (f fakeAdmin) ListRealmRoles(ctx context.Context, realm string, first, max int) ([]*gocloak.Role, error) {
+	return f.listRealmRoles(ctx, realm, first, max)
 }
 
 func (f fakeAdmin) UpdateClient(ctx context.Context, realm string, rep gocloak.Client) (*gocloak.Client, error) {
@@ -350,6 +362,53 @@ func TestReadOnlyOmitsMutatingTools(t *testing.T) {
 	} {
 		if !tools[name] {
 			t.Errorf("read-only server omitted read tool %q", name)
+		}
+	}
+}
+
+func TestListToolsForwardPagination(t *testing.T) {
+	admin := &fakeAdmin{
+		listClients: func(_ context.Context, realm, filter string, first, max int) ([]*gocloak.Client, error) {
+			if realm != "acme" || filter != "app" || first != 2 || max != 3 {
+				t.Errorf("client pagination = %q/%q/%d/%d", realm, filter, first, max)
+			}
+			return []*gocloak.Client{}, nil
+		},
+		listUsers: func(_ context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error) {
+			if realm != "acme" || search != "ali" || username != "" || first != 4 || max != 5 {
+				t.Errorf("user pagination = %q/%q/%q/%d/%d", realm, search, username, first, max)
+			}
+			return []*gocloak.User{}, nil
+		},
+		listGroups: func(_ context.Context, realm, search string, first, max int) ([]*gocloak.Group, error) {
+			if realm != "acme" || search != "eng" || first != 6 || max != 7 {
+				t.Errorf("group pagination = %q/%q/%d/%d", realm, search, first, max)
+			}
+			return []*gocloak.Group{}, nil
+		},
+		listRealmRoles: func(_ context.Context, realm string, first, max int) ([]*gocloak.Role, error) {
+			if realm != "acme" || first != 8 || max != 9 {
+				t.Errorf("role pagination = %q/%d/%d", realm, first, max)
+			}
+			return []*gocloak.Role{}, nil
+		},
+	}
+	cs := newTestClient(t, admin)
+	callTool(t, cs, "client_list", map[string]any{"realm": "acme", "clientId": "app", "first": 2, "max": 3})
+	callTool(t, cs, "user_list", map[string]any{"realm": "acme", "search": "ali", "first": 4, "max": 5})
+	callTool(t, cs, "group_list", map[string]any{"realm": "acme", "search": "eng", "first": 6, "max": 7})
+	callTool(t, cs, "realm_role_list", map[string]any{"realm": "acme", "first": 8, "max": 9})
+}
+
+func TestListToolsRejectNegativeFirst(t *testing.T) {
+	cs := newTestClient(t, &fakeAdmin{})
+	for _, name := range []string{"client_list", "user_list", "group_list", "realm_role_list"} {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{"realm": "acme", "first": -1}})
+		if err != nil {
+			t.Fatalf("CallTool(%s): %v", name, err)
+		}
+		if !res.IsError || !strings.Contains(resultText(t, res), "first must be zero or greater") {
+			t.Errorf("CallTool(%s) accepted negative first", name)
 		}
 	}
 }
@@ -807,7 +866,7 @@ func TestClientScopeGetResolvesName(t *testing.T) {
 func TestClientScopeAssignmentUsesInternalIDs(t *testing.T) {
 	var added, removed [2]string
 	admin := &fakeAdmin{
-		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+		listClients: func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("web-app")}}, nil
 		},
 		listClientScopes: func(context.Context, string) ([]*gocloak.ClientScope, error) {
@@ -850,7 +909,7 @@ func TestClientScopeAssignmentUsesInternalIDs(t *testing.T) {
 func TestClientSecretGetOmitsSecretByDefault(t *testing.T) {
 	called := false
 	admin := &fakeAdmin{
-		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+		listClients: func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("app"), PublicClient: gocloak.BoolP(false)}}, nil
 		},
 		getClientSecret: func(context.Context, string, string) (*gocloak.CredentialRepresentation, error) {
@@ -875,7 +934,7 @@ func TestClientSecretGetOmitsSecretByDefault(t *testing.T) {
 
 func TestClientSecretGetExplicitlyIncludesSecretWithoutTextDuplication(t *testing.T) {
 	admin := &fakeAdmin{
-		listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+		listClients: func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 			return []*gocloak.Client{{ID: gocloak.StringP("client-1"), ClientID: gocloak.StringP("app"), PublicClient: gocloak.BoolP(false)}}, nil
 		},
 		getClientSecret: func(context.Context, string, string) (*gocloak.CredentialRepresentation, error) {
@@ -897,7 +956,7 @@ func TestClientSecretGetExplicitlyIncludesSecretWithoutTextDuplication(t *testin
 }
 
 func TestClientGetResolvesExactClientID(t *testing.T) {
-	admin := &fakeAdmin{listClients: func(_ context.Context, _, clientID string, _ int) ([]*gocloak.Client, error) {
+	admin := &fakeAdmin{listClients: func(_ context.Context, _, clientID string, _, _ int) ([]*gocloak.Client, error) {
 		return []*gocloak.Client{
 			{ID: gocloak.StringP("id-2"), ClientID: gocloak.StringP("app2")},
 			{ID: gocloak.StringP("id-1"), ClientID: gocloak.StringP("app")},
@@ -913,7 +972,7 @@ func TestClientGetResolvesExactClientID(t *testing.T) {
 }
 
 func TestClientGetNotFound(t *testing.T) {
-	admin := &fakeAdmin{listClients: func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+	admin := &fakeAdmin{listClients: func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 		return nil, nil
 	}}
 	cs := newTestClient(t, admin)
@@ -983,7 +1042,7 @@ func TestUserSetPasswordDefaultsToPermanent(t *testing.T) {
 }
 
 func TestClientUpdatePartialChanges(t *testing.T) {
-	resolve := func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+	resolve := func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 		return []*gocloak.Client{{ID: gocloak.StringP("id-1"), ClientID: gocloak.StringP("app")}}, nil
 	}
 	var captured gocloak.Client
@@ -1032,7 +1091,7 @@ func TestClientUpdatePartialChanges(t *testing.T) {
 }
 
 func TestClientUpdateOmittedRedirectURIsUnchanged(t *testing.T) {
-	resolve := func(context.Context, string, string, int) ([]*gocloak.Client, error) {
+	resolve := func(context.Context, string, string, int, int) ([]*gocloak.Client, error) {
 		return []*gocloak.Client{{ID: gocloak.StringP("id-1"), ClientID: gocloak.StringP("app")}}, nil
 	}
 	var captured gocloak.Client

@@ -1,10 +1,18 @@
 package mcpserver
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Nerzal/gocloak/v14"
 )
+
+func validateFirst(first int) error {
+	if first < 0 {
+		return fmt.Errorf("first must be zero or greater")
+	}
+	return nil
+}
 
 // defaultMax caps list tool results when the caller does not specify a
 // limit, keeping tool output small enough for LLM context windows.

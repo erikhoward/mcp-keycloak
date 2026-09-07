@@ -29,7 +29,7 @@ type AdminAPI interface {
 	UpdateRealm(ctx context.Context, realm gocloak.RealmRepresentation) (*gocloak.RealmRepresentation, error)
 	DeleteRealm(ctx context.Context, realm string) error
 
-	ListClients(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Client, error)
+	ListClients(ctx context.Context, realm, clientID string, first, max int) ([]*gocloak.Client, error)
 	GetClient(ctx context.Context, realm, id string) (*gocloak.Client, error)
 	CreateClient(ctx context.Context, realm string, client gocloak.Client) (*gocloak.Client, error)
 	UpdateClient(ctx context.Context, realm string, client gocloak.Client) (*gocloak.Client, error)
@@ -52,7 +52,7 @@ type AdminAPI interface {
 	UpdateIdentityProvider(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
 	DeleteIdentityProvider(ctx context.Context, realm, alias string) error
 
-	ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error)
+	ListUsers(ctx context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error)
 	CountUsers(ctx context.Context, realm, search string) (int, error)
 	GetUserBruteForceStatus(ctx context.Context, realm, userID string) (*gocloak.BruteForceStatus, error)
 	GetUser(ctx context.Context, realm, userID string) (*gocloak.User, error)
@@ -79,11 +79,11 @@ type AdminAPI interface {
 	ListChildGroups(ctx context.Context, realm, groupID string, max int) ([]*gocloak.Group, error)
 	CreateChildGroup(ctx context.Context, realm, parentID, name string) (*gocloak.Group, error)
 
-	ListGroups(ctx context.Context, realm, search string, max int) ([]*gocloak.Group, error)
+	ListGroups(ctx context.Context, realm, search string, first, max int) ([]*gocloak.Group, error)
 	CreateGroup(ctx context.Context, realm, name string) (*gocloak.Group, error)
 	DeleteGroup(ctx context.Context, realm, groupID string) error
 
-	ListRealmRoles(ctx context.Context, realm string, max int) ([]*gocloak.Role, error)
+	ListRealmRoles(ctx context.Context, realm string, first, max int) ([]*gocloak.Role, error)
 	GetRealmRole(ctx context.Context, realm, name string) (*gocloak.Role, error)
 	CreateRealmRole(ctx context.Context, realm string, role gocloak.Role) (*gocloak.Role, error)
 	UpdateRealmRole(ctx context.Context, realm, name string, role gocloak.Role) (*gocloak.Role, error)

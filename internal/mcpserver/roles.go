@@ -10,6 +10,7 @@ import (
 
 type listRealmRolesInput struct {
 	Realm string `json:"realm" jsonschema:"realm name"`
+	First int    `json:"first,omitempty" jsonschema:"zero-based index of the first result; default 0"`
 	Max   int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
 }
 
@@ -45,7 +46,10 @@ func addRealmRoleTools(s *mcp.Server, admin AdminAPI, options Options) {
 		Description: "List the realm-level roles of a realm (excluding built-in ones only if the server hides them).",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listRealmRolesInput) (*mcp.CallToolResult, any, error) {
-		roles, err := admin.ListRealmRoles(ctx, in.Realm, resolveMax(in.Max))
+		if err := validateFirst(in.First); err != nil {
+			return nil, nil, err
+		}
+		roles, err := admin.ListRealmRoles(ctx, in.Realm, in.First, resolveMax(in.Max))
 		if err != nil {
 			return nil, nil, err
 		}

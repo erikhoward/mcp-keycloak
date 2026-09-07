@@ -11,6 +11,7 @@ import (
 type listGroupsInput struct {
 	Realm  string `json:"realm" jsonschema:"realm name"`
 	Search string `json:"search,omitempty" jsonschema:"substring matched against group names and paths"`
+	First  int    `json:"first,omitempty" jsonschema:"zero-based index of the first result; default 0"`
 	Max    int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
 }
 
@@ -62,7 +63,10 @@ func addGroupTools(s *mcp.Server, admin AdminAPI, options Options) {
 		Description: "List the top-level groups of a realm, optionally filtered by a search substring. Returns internal group IDs needed by other group tools.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listGroupsInput) (*mcp.CallToolResult, any, error) {
-		groups, err := admin.ListGroups(ctx, in.Realm, in.Search, resolveMax(in.Max))
+		if err := validateFirst(in.First); err != nil {
+			return nil, nil, err
+		}
+		groups, err := admin.ListGroups(ctx, in.Realm, in.Search, in.First, resolveMax(in.Max))
 		if err != nil {
 			return nil, nil, err
 		}

@@ -94,6 +94,20 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("user list second page", func(t *testing.T) {
+		for _, username := range []string{"paging-alpha", "paging-beta", "paging-gamma"} {
+			callTool(t, cs, "user_create", map[string]any{"realm": realm, "username": username})
+		}
+		firstPage := decodeResult[[]*gocloak.User](t, callTool(t, cs, "user_list", map[string]any{"realm": realm, "search": "paging-", "first": 0, "max": 1}))
+		secondPage := decodeResult[[]*gocloak.User](t, callTool(t, cs, "user_list", map[string]any{"realm": realm, "search": "paging-", "first": 1, "max": 1}))
+		if len(firstPage) != 1 || len(secondPage) != 1 {
+			t.Fatalf("page sizes = %d/%d, want 1/1", len(firstPage), len(secondPage))
+		}
+		if deref(firstPage[0].ID) == deref(secondPage[0].ID) {
+			t.Error("first and second pages returned the same user")
+		}
+	})
+
 	t.Run("realm role update and composites", func(t *testing.T) {
 		callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "report-reader"})
 		callTool(t, cs, "realm_role_create", map[string]any{"realm": realm, "name": "report-bundle"})
@@ -653,7 +667,7 @@ func TestServiceAccountAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create service-account admin: %v", err)
 	}
-	users, err := serviceAdmin.ListUsers(ctx, realm, "", "", 100)
+	users, err := serviceAdmin.ListUsers(ctx, realm, "", "", 0, 100)
 	if err != nil {
 		t.Fatalf("service-account ListUsers: %v", err)
 	}
@@ -668,7 +682,7 @@ func TestServiceAccountAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create restricted service-account admin: %v", err)
 	}
-	if _, err := restrictedAdmin.ListUsers(ctx, realm, "", "", 100); err == nil {
+	if _, err := restrictedAdmin.ListUsers(ctx, realm, "", "", 0, 100); err == nil {
 		t.Error("restricted service account unexpectedly listed users without realm-management roles")
 	}
 }
