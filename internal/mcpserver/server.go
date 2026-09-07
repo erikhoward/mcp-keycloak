@@ -35,6 +35,7 @@ type AdminAPI interface {
 	UpdateClient(ctx context.Context, realm string, client gocloak.Client) (*gocloak.Client, error)
 	GetClientSecret(ctx context.Context, realm, id string) (*gocloak.CredentialRepresentation, error)
 	DeleteClient(ctx context.Context, realm, id string) error
+	GetClientServiceAccount(ctx context.Context, realm, clientID string) (*gocloak.User, error)
 
 	ListClientScopes(ctx context.Context, realm string) ([]*gocloak.ClientScope, error)
 	GetClientScope(ctx context.Context, realm, id string) (*gocloak.ClientScope, error)
@@ -51,6 +52,11 @@ type AdminAPI interface {
 	CreateIdentityProvider(ctx context.Context, realm string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
 	UpdateIdentityProvider(ctx context.Context, realm, alias string, provider gocloak.IdentityProviderRepresentation) (*gocloak.IdentityProviderRepresentation, error)
 	DeleteIdentityProvider(ctx context.Context, realm, alias string) error
+	ListIdentityProviderMappers(ctx context.Context, realm, alias string) ([]*gocloak.IdentityProviderMapper, error)
+	GetIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string) (*gocloak.IdentityProviderMapper, error)
+	CreateIdentityProviderMapper(ctx context.Context, realm, alias string, mapper gocloak.IdentityProviderMapper) (*gocloak.IdentityProviderMapper, error)
+	UpdateIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string, mapper gocloak.IdentityProviderMapper) (*gocloak.IdentityProviderMapper, error)
+	DeleteIdentityProviderMapper(ctx context.Context, realm, alias, mapperID string) error
 
 	ListUsers(ctx context.Context, realm, search, username string, first, max int) ([]*gocloak.User, error)
 	CountUsers(ctx context.Context, realm, search string) (int, error)
@@ -97,6 +103,8 @@ type AdminAPI interface {
 	AddClientRolesToUser(ctx context.Context, realm, clientID, userID string, roleNames []string) error
 	RemoveClientRolesFromUser(ctx context.Context, realm, clientID, userID string, roleNames []string) error
 	GetUserClientRoles(ctx context.Context, realm, clientID, userID string) ([]*gocloak.Role, error)
+	ListUserFederatedIdentities(ctx context.Context, realm, userID string) ([]*gocloak.FederatedIdentityRepresentation, error)
+	DeleteUserFederatedIdentity(ctx context.Context, realm, userID, providerID string) error
 
 	GetServerInfo(ctx context.Context) (*gocloak.ServerInfoRepresentation, error)
 }
@@ -122,6 +130,7 @@ func NewWithOptions(admin AdminAPI, options Options) *mcp.Server {
 	addClientScopeTools(s, admin, options)
 	addEventTools(s, admin)
 	addIdentityProviderTools(s, admin, options)
+	addIdentityProviderMapperTools(s, admin, options)
 	addUserTools(s, admin, options)
 	addGroupTools(s, admin, options)
 	addRealmRoleTools(s, admin, options)

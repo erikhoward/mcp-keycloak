@@ -67,6 +67,12 @@ type userGroupInput struct {
 	GroupID string `json:"groupId" jsonschema:"internal group ID (UUID) as returned by group_list or group_create"`
 }
 
+type userIdentityProviderInput struct {
+	Realm      string `json:"realm" jsonschema:"realm name"`
+	UserID     string `json:"userId" jsonschema:"internal user ID (UUID)"`
+	ProviderID string `json:"providerId" jsonschema:"identity provider alias"`
+}
+
 type listUserSessionsInput struct {
 	Realm  string `json:"realm" jsonschema:"realm name"`
 	UserID string `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
@@ -85,6 +91,10 @@ type listUserGroupsInput struct {
 }
 
 func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
+	mcp.AddTool(s, &mcp.Tool{Name: "user_idp_list", Title: "List user identity providers", Description: "List broker identities linked to a user.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRefInput) (*mcp.CallToolResult, any, error) {
+		links, err := admin.ListUserFederatedIdentities(ctx, in.Realm, in.UserID)
+		return nil, nonNil(links), err
+	})
 	mcp.AddTool(s, &mcp.Tool{Name: "user_count", Title: "Count users", Description: "Count users in a realm, optionally matching a search filter.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in countUsersInput) (*mcp.CallToolResult, any, error) {
 		count, err := admin.CountUsers(ctx, in.Realm, in.Search)
 		return nil, map[string]any{"count": count}, err
@@ -170,6 +180,10 @@ func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
 	if options.ReadOnly {
 		return
 	}
+	mcp.AddTool(s, &mcp.Tool{Name: "user_idp_unlink", Title: "Unlink user identity provider", Description: "Remove a broker identity link from a user.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in userIdentityProviderInput) (*mcp.CallToolResult, any, error) {
+		err := admin.DeleteUserFederatedIdentity(ctx, in.Realm, in.UserID, in.ProviderID)
+		return nil, map[string]any{"userId": in.UserID, "providerId": in.ProviderID, "unlinked": true}, err
+	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_create",

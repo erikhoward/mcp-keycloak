@@ -71,6 +71,10 @@ type updateClientInput struct {
 }
 
 func addClientTools(s *mcp.Server, admin AdminAPI, options Options) {
+	mcp.AddTool(s, &mcp.Tool{Name: "client_service_account_user", Title: "Get client service-account user", Description: "Get the virtual user belonging to a service-account-enabled client.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in clientRefInput) (*mcp.CallToolResult, any, error) {
+		user, err := admin.GetClientServiceAccount(ctx, in.Realm, in.ClientID)
+		return nil, user, err
+	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "client_list",
 		Title:       "List clients",

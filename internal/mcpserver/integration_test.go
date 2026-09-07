@@ -190,6 +190,21 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("client service account user", func(t *testing.T) {
+		user := decodeResult[gocloak.User](t, callTool(t, cs, "client_service_account_user", map[string]any{"realm": realm, "clientId": "web-app"}))
+		if deref(user.ID) == "" {
+			t.Error("service-account user has no internal ID")
+		}
+		callTool(t, cs, "client_create", map[string]any{"realm": realm, "clientId": "no-service-account"})
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "client_service_account_user", Arguments: map[string]any{"realm": realm, "clientId": "no-service-account"}})
+		if err != nil {
+			t.Fatalf("client_service_account_user: %v", err)
+		}
+		if !res.IsError || !strings.Contains(resultText(t, res), "service-account user") {
+			t.Errorf("expected clear service-account error, got %s", resultText(t, res))
+		}
+	})
+
 	t.Run("OIDC identity provider lifecycle", func(t *testing.T) {
 		res := callTool(t, cs, "identity_provider_create", map[string]any{
 			"realm":            realm,
@@ -236,6 +251,41 @@ func TestKeycloakToolsIntegration(t *testing.T) {
 		if deref(stored.DisplayName) != "Corporate SSO v2" || stored.Config["clientSecret"] == "" || stored.Config["clientSecret"] == "super-secret" || stored.Config["defaultScope"] != "openid email" {
 			t.Errorf("stored provider did not preserve/update expected fields: display=%q config=%v", deref(stored.DisplayName), stored.Config)
 		}
+
+		res = callTool(t, cs, "identity_provider_mapper_create", map[string]any{
+			"realm": realm, "alias": "corporate", "name": "department", "mapperType": "oidc-user-attribute-idp-mapper",
+			"config": map[string]string{"claim": "department", "user.attribute": "department", "syncMode": "INHERIT"},
+		})
+		mapper := decodeResult[gocloak.IdentityProviderMapper](t, res)
+		mapperID := deref(mapper.ID)
+		if mapperID == "" {
+			t.Fatal("identity_provider_mapper_create returned no ID")
+		}
+		mappers := decodeResult[[]*gocloak.IdentityProviderMapper](t, callTool(t, cs, "identity_provider_mapper_list", map[string]any{"realm": realm, "alias": "corporate"}))
+		if !hasIdentityProviderMapperID(mappers, mapperID) {
+			t.Error("created identity provider mapper was not listed")
+		}
+		callTool(t, cs, "identity_provider_mapper_get", map[string]any{"realm": realm, "alias": "corporate", "mapperId": mapperID})
+		res = callTool(t, cs, "identity_provider_mapper_update", map[string]any{"realm": realm, "alias": "corporate", "mapperId": mapperID, "name": "division"})
+		if got := deref(decodeResult[gocloak.IdentityProviderMapper](t, res).Name); got != "division" {
+			t.Errorf("updated mapper name = %q", got)
+		}
+
+		gc := gocloak.NewClient(testBaseURL)
+		if err := gc.CreateUserFederatedIdentity(t.Context(), verifyToken(t), realm, userID, "corporate", gocloak.FederatedIdentityRepresentation{IdentityProvider: gocloak.StringP("corporate"), UserID: gocloak.StringP("external-1"), UserName: gocloak.StringP("alice@example.com")}); err != nil {
+			t.Fatalf("create federated identity: %v", err)
+		}
+		links := decodeResult[[]*gocloak.FederatedIdentityRepresentation](t, callTool(t, cs, "user_idp_list", map[string]any{"realm": realm, "userId": userID}))
+		if len(links) != 1 || deref(links[0].IdentityProvider) != "corporate" {
+			t.Errorf("unexpected federated identities: %+v", links)
+		}
+		callTool(t, cs, "user_idp_unlink", map[string]any{"realm": realm, "userId": userID, "providerId": "corporate"})
+		links = decodeResult[[]*gocloak.FederatedIdentityRepresentation](t, callTool(t, cs, "user_idp_list", map[string]any{"realm": realm, "userId": userID}))
+		if len(links) != 0 {
+			t.Error("federated identity remains after unlink")
+		}
+
+		callTool(t, cs, "identity_provider_mapper_delete", map[string]any{"realm": realm, "alias": "corporate", "mapperId": mapperID})
 
 		callTool(t, cs, "identity_provider_delete", map[string]any{"realm": realm, "alias": "corporate"})
 	})
@@ -780,6 +830,15 @@ func createRealmRole(t *testing.T, cs *mcp.ClientSession, realm string) string {
 func hasClientScopeID(scopes []*gocloak.ClientScope, id string) bool {
 	for _, scope := range scopes {
 		if deref(scope.ID) == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIdentityProviderMapperID(mappers []*gocloak.IdentityProviderMapper, id string) bool {
+	for _, mapper := range mappers {
+		if deref(mapper.ID) == id {
 			return true
 		}
 	}
