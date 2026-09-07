@@ -11,6 +11,7 @@ import (
 type listClientsInput struct {
 	Realm    string `json:"realm" jsonschema:"realm name"`
 	ClientID string `json:"clientId,omitempty" jsonschema:"filter by client identifier, e.g. \"account\""`
+	First    int    `json:"first,omitempty" jsonschema:"zero-based index of the first result; default 0"`
 	Max      int    `json:"max,omitempty" jsonschema:"maximum number of results; default 100"`
 }
 
@@ -46,7 +47,7 @@ type createClientInput struct {
 // resolveClient finds a client by its clientId (the human-facing identifier)
 // within a realm.
 func resolveClient(ctx context.Context, admin AdminAPI, realm, clientID string) (*gocloak.Client, error) {
-	clients, err := admin.ListClients(ctx, realm, clientID, 0)
+	clients, err := admin.ListClients(ctx, realm, clientID, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,10 @@ func addClientTools(s *mcp.Server, admin AdminAPI, options Options) {
 		Description: "List the clients of a realm, optionally filtered by client identifier.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listClientsInput) (*mcp.CallToolResult, any, error) {
-		clients, err := admin.ListClients(ctx, in.Realm, in.ClientID, resolveMax(in.Max))
+		if err := validateFirst(in.First); err != nil {
+			return nil, nil, err
+		}
+		clients, err := admin.ListClients(ctx, in.Realm, in.ClientID, in.First, resolveMax(in.Max))
 		if err != nil {
 			return nil, nil, err
 		}

@@ -66,7 +66,10 @@ With Keycloak's default JPA store, `resourcePath` uses SQL LIKE matching with
 expression. See the [admin event query implementation](https://github.com/keycloak/keycloak/blob/26.7.3/model/jpa/src/main/java/org/keycloak/events/jpa/JpaAdminEventQuery.java).
 
 Results follow Keycloak's ordering (newest first with the default JPA store).
-The tools expose no offset, cursor, or sort option. Internal pages contain at
+Unlike `user_list`, `group_list`, `client_list`, and `realm_role_list`, the
+event tools expose no `first` offset, cursor, or sort option. Their bounded
+multi-page fetch and 10,000-event safety cap are intentionally kept separate
+from ordinary Keycloak list pagination. Internal pages contain at
 most 100 events, with a 10,000-event fetch cap per call even if `max` is larger.
 A full result set may be truncated. Narrow the dates or filters instead of
 treating a single call as a complete audit export.
