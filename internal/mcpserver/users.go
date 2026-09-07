@@ -20,6 +20,11 @@ type userRefInput struct {
 	UserID string `json:"userId" jsonschema:"internal user ID (UUID) as returned by user_list or user_create"`
 }
 
+type countUsersInput struct {
+	Realm  string `json:"realm" jsonschema:"realm name"`
+	Search string `json:"search,omitempty" jsonschema:"optional user search filter"`
+}
+
 type createUserInput struct {
 	Realm                    string `json:"realm" jsonschema:"realm to create the user in"`
 	Username                 string `json:"username" jsonschema:"unique username"`
@@ -79,6 +84,14 @@ type listUserGroupsInput struct {
 }
 
 func addUserTools(s *mcp.Server, admin AdminAPI, options Options) {
+	mcp.AddTool(s, &mcp.Tool{Name: "user_count", Title: "Count users", Description: "Count users in a realm, optionally matching a search filter.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in countUsersInput) (*mcp.CallToolResult, any, error) {
+		count, err := admin.CountUsers(ctx, in.Realm, in.Search)
+		return nil, map[string]any{"count": count}, err
+	})
+	mcp.AddTool(s, &mcp.Tool{Name: "user_bruteforce_status", Title: "Get user brute-force status", Description: "Get login failure count, lockout state, and last failure details for a user.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, _ *mcp.CallToolRequest, in userRefInput) (*mcp.CallToolResult, any, error) {
+		status, err := admin.GetUserBruteForceStatus(ctx, in.Realm, in.UserID)
+		return nil, status, err
+	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "user_list",
 		Title:       "List users",

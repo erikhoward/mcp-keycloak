@@ -53,6 +53,8 @@ type AdminAPI interface {
 	DeleteIdentityProvider(ctx context.Context, realm, alias string) error
 
 	ListUsers(ctx context.Context, realm, search, username string, max int) ([]*gocloak.User, error)
+	CountUsers(ctx context.Context, realm, search string) (int, error)
+	GetUserBruteForceStatus(ctx context.Context, realm, userID string) (*gocloak.BruteForceStatus, error)
 	GetUser(ctx context.Context, realm, userID string) (*gocloak.User, error)
 	CreateUser(ctx context.Context, realm string, user gocloak.User) (*gocloak.User, error)
 	UpdateUser(ctx context.Context, realm string, user gocloak.User) (*gocloak.User, error)
@@ -82,8 +84,21 @@ type AdminAPI interface {
 	DeleteGroup(ctx context.Context, realm, groupID string) error
 
 	ListRealmRoles(ctx context.Context, realm string, max int) ([]*gocloak.Role, error)
+	GetRealmRole(ctx context.Context, realm, name string) (*gocloak.Role, error)
 	CreateRealmRole(ctx context.Context, realm string, role gocloak.Role) (*gocloak.Role, error)
+	UpdateRealmRole(ctx context.Context, realm, name string, role gocloak.Role) (*gocloak.Role, error)
 	DeleteRealmRole(ctx context.Context, realm, name string) error
+	AddRealmRoleComposites(ctx context.Context, realm, name string, roleNames []string) error
+	RemoveRealmRoleComposites(ctx context.Context, realm, name string, roleNames []string) error
+
+	ListClientRoles(ctx context.Context, realm, clientID string, max int) ([]*gocloak.Role, error)
+	CreateClientRole(ctx context.Context, realm, clientID string, role gocloak.Role) (*gocloak.Role, error)
+	DeleteClientRole(ctx context.Context, realm, clientID, name string) error
+	AddClientRolesToUser(ctx context.Context, realm, clientID, userID string, roleNames []string) error
+	RemoveClientRolesFromUser(ctx context.Context, realm, clientID, userID string, roleNames []string) error
+	GetUserClientRoles(ctx context.Context, realm, clientID, userID string) ([]*gocloak.Role, error)
+
+	GetServerInfo(ctx context.Context) (*gocloak.ServerInfoRepresentation, error)
 }
 
 // Compile-time check that *keycloak.Admin satisfies AdminAPI.
@@ -110,5 +125,7 @@ func NewWithOptions(admin AdminAPI, options Options) *mcp.Server {
 	addUserTools(s, admin, options)
 	addGroupTools(s, admin, options)
 	addRealmRoleTools(s, admin, options)
+	addClientRoleTools(s, admin, options)
+	addServerInfoTool(s, admin)
 	return s
 }
