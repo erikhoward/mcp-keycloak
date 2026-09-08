@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/erikhoward/mcp-keycloak/security/advisories/new
+    about: Report security issues privately. Do not open a public issue.
+  - name: Read the support guide
+    url: https://github.com/erikhoward/mcp-keycloak/blob/main/SUPPORT.md
+    about: Check the documentation and support guidance before opening an issue.

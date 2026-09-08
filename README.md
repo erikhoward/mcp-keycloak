@@ -128,6 +128,9 @@ Combine read-only mode with scoped Keycloak permissions and narrow queries.
 
 See [event filters and safe read-only examples](docs/events.md).
 
+To report a security vulnerability, follow [SECURITY.md](SECURITY.md) rather
+than opening a public issue.
+
 ## Configuration
 
 | Variable | Required | Description |
