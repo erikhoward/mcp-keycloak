@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement to mcp-keycloak
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, tokens, client secrets, or private Keycloak data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What use case or limitation motivates this request?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or API you would like.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and compatibility considerations
+      description: Explain any permission, secret-handling, or compatibility impact.

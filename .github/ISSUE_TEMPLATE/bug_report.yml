@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem with mcp-keycloak
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include passwords, tokens, client secrets, private URLs, or
+        production data. Report security vulnerabilities privately through
+        [SECURITY.md](https://github.com/erikhoward/mcp-keycloak/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Which release or commit is affected?
+      placeholder: v0.3.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, architecture, Go version, and Keycloak version when relevant.
+      placeholder: Linux amd64, Go 1.25.13, Keycloak 26.7.3
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe example that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact error message, with sensitive values removed.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste sanitized logs or a stack trace, if available.
+      render: text
